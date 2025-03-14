@@ -18,6 +18,7 @@ class MessageCreate(BaseModel):
 class SummariseLinkRequest(BaseModel):
     user_id: int
     message: str
+    resource_id: int
     message_type: str
 
 class SummariseLinkResponse(BaseModel):
@@ -30,3 +31,14 @@ class IntentRouterRequest(BaseModel):
 
 class LlmIntentClassifierResponse(BaseModel):
     function_name: str
+
+class PreprocessResourceRequest(BaseModel):
+    user_id: int
+    message: str
+    message_type: str
+
+class AddToLearningQueueRequest(BaseModel):
+    user_id: int
+    message: str
+    resource_id: int
+    message_type: str

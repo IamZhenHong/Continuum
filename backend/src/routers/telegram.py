@@ -1,19 +1,20 @@
-import os
 import logging
+import requests
+import asyncio
+from fastapi import APIRouter, BackgroundTasks
+from src.config.settings import settings
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
-import requests
-from dotenv import load_dotenv
-import redis
 
-load_dotenv()
+router = APIRouter()
+
+
+
+
+
+
+
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "7619287685:AAGwEGyTnv2yyb6P5yWEh4XbDvJCr1MSQRQ")
-BASE_URL = "http://localhost:8000"  # FastAPI Base URL
-API_URL = "http://localhost:8000/store_message"  # FastAPI Endpoint
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-
-redis_client = redis.StrictRedis.from_url(REDIS_URL, decode_responses=True)
-
 
 logging.basicConfig(level=logging.INFO)
 
