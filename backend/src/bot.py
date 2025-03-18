@@ -8,6 +8,8 @@ from telegram import Update, BotCommand
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
 from src.config.settings import supabase_client
 import httpx  # Use async HTTP client
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import CallbackQueryHandler
 
 # ✅ Initialize Router
 router = APIRouter()
@@ -30,6 +32,7 @@ async def set_telegram_commands():
     commands = [
         BotCommand("start", "Start the bot"),
         BotCommand("queue_status", "Show processing queue status"),
+        BotCommand("latest_resources", "Show latest processed resources")
     ]
     await telegram_app.bot.set_my_commands(commands)
     logging.info("✅ Telegram bot commands set successfully!")
@@ -57,6 +60,83 @@ async def queue_status(update: Update, context: CallbackContext):
 
     await update.message.reply_text(message)
 
+async def show_latest_processed_resources_list(update: Update, context: CallbackContext):
+    """Shows the latest processed resources that the user has not yet viewed."""
+    user_telegram_id = update.message.from_user.id  # Get the Telegram user ID
+    
+    user_id = supabase_client.table("users") \
+        .select("id") \
+        .eq("telegram_id", user_telegram_id) \
+        .execute() \
+        .data[0]["id"]
+    
+    # ✅ Fetch latest processed resources where is_completed = True and the user has not viewed them
+    resources = supabase_client.table("resources") \
+        .select("id, title, url, is_processed") \
+        .eq("is_processed", True) \
+        .eq("user_id", user_id) \
+        .order("created_at", desc=True) \
+        .limit(5) \
+        .execute()
+    
+    if not resources.data:
+        await update.message.reply_text("✅ No new processed resources. You're all caught up!")
+        return
+
+    keyboard = [
+        [InlineKeyboardButton(resource["title"], callback_data=f"view_resource_{resource['id']}")]
+        for resource in resources.data
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await update.message.reply_text(
+        "📋 **Select a resource to view:**",
+        reply_markup=reply_markup,
+        parse_mode="Markdown"
+    )
+
+from telegram import CallbackQuery
+
+async def handle_resource_selection(update: Update, context: CallbackContext):
+    """Handles the selection of a resource and marks it as viewed."""
+    query: CallbackQuery = update.callback_query
+    user_telegram_id = query.from_user.id
+
+    user_id = supabase_client.table("users") \
+        .select("id") \
+        .eq("telegram_id", user_telegram_id) \
+        .execute() \
+        .data[0]["id"]
+
+
+    # ✅ Extract resource ID from callback_data
+    resource_id = query.data.replace("view_resource_", "")
+
+    # ✅ Fetch the resource details
+    resource = supabase_client.table("resources") \
+        .select("id, title, url, summary") \
+        .eq("id", resource_id) \
+        .eq("user_id", user_id) \
+        .single() \
+        .execute()
+
+    if not resource.data:
+        await query.answer("❌ Resource not found.")
+        return
+
+    # ✅ Mark the resource as viewed
+    supabase_client.table("resources").update({"is_viewed": True}) \
+        .eq("id", resource_id) \
+        .execute()
+
+    # ✅ Send enriched content
+    enriched_content = resource.data.get("enriched_data", "No enrichment available.")
+
+    message = f"📖 **{resource.data['title']}**\n🔗 [{resource.data['url']}]({resource.data['url']})\n\n"
+    message += f"💡 **Key Insights:**\n{enriched_content}"
+
+    await query.message.reply_text(message, parse_mode="Markdown")
+    await query.answer()  # ✅ Closes the button interaction
 
 # ✅ Handle Incoming Text Messages
 async def handle_message(update: Update, context: CallbackContext):
@@ -117,6 +197,8 @@ def send_telegram_message(user_id: int, message: str):
 # ✅ Register Handlers
 telegram_app.add_handler(CommandHandler("start", start))
 telegram_app.add_handler(CommandHandler("queue_status", queue_status))
+telegram_app.add_handler(CommandHandler("latest_resources", show_latest_processed_resources_list))
+telegram_app.add_handler(CallbackQueryHandler(handle_resource_selection))
 telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
 

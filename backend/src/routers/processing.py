@@ -45,13 +45,18 @@ async def process_resource(resource_id: int, user_id: int, message: str):
         print(resource_id)
         print(user_id)
         print(message)
-        await enrich(
+        response = await enrich(
             schemas.EnrichResourceRequest(
                 resource_id=resource_id, message=message, user_id=user_id
             )
         )
-        logging.info(f"✅ AI Processing completed for Resource ID: {resource_id}")
 
+        if not response:
+            raise Exception("Enrichment failed")
+        
+        logging.info(f"✅ AI Processing completed for Resource ID: {resource_id}")
+        supabase_client.table("resources").update({"is_processed": True}).eq("id", resource_id).execute()
+        
         # ✅ Mark as "completed" in Redis
         redis_client.decr(settings.REDIS.REDIS_QUEUE_PROCESSING_COUNT)
         redis_client.set(
