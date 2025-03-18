@@ -1,6 +1,7 @@
 from pydantic import BaseModel, validator
 from typing import List
 from pydantic import Field
+from typing import Optional
 
 
 
@@ -20,7 +21,7 @@ class IntentRouterRequest(BaseModel):
     user_id: int
     intent: str
     message: str
-    resource_id: int = None
+    resource_id: Optional[int] = None 
 
 
 class ExtractAndSummariseLinkRequest(BaseModel):

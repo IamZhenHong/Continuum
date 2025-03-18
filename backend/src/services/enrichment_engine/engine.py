@@ -54,6 +54,15 @@ For the resource below, extract:
 
         print("Content", content)
 
+        supabase_client.table("ai_enrichments").insert({
+            "resource_id": data.resource_id,
+            "main_concept": content.main_concept,
+            "key_keywords": content.key_keywords,
+            "related_concepts": content.related_concepts,
+            "follow_up_questions": content.follow_up_questions,
+            "actionable_insights": content.actionable_insights,
+        }).execute()
+
         if not content:
             logging.error(f"❌ OpenAI API returned an empty enrichment response for Resource ID: {data.resource_id}")
             return {"status": "error", "message": "OpenAI API returned an empty response."}
