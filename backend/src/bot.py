@@ -97,17 +97,24 @@ async def show_latest_processed_resources_list(update: Update, context: Callback
 
 from telegram import CallbackQuery
 
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery
+
 async def handle_resource_selection(update: Update, context: CallbackContext):
-    """Handles the selection of a resource and marks it as viewed."""
+    """Handles the selection of a resource and presents further actions."""
     query: CallbackQuery = update.callback_query
     user_telegram_id = query.from_user.id
 
-    user_id = supabase_client.table("users") \
+    # ✅ Fetch user ID from Supabase
+    user_data = supabase_client.table("users") \
         .select("id") \
         .eq("telegram_id", user_telegram_id) \
-        .execute() \
-        .data[0]["id"]
+        .execute()
 
+    if not user_data.data:
+        await query.answer("❌ User not found.")
+        return
+
+    user_id = user_data.data[0]["id"]
 
     # ✅ Extract resource ID from callback_data
     resource_id = query.data.replace("view_resource_", "")
@@ -129,14 +136,98 @@ async def handle_resource_selection(update: Update, context: CallbackContext):
         .eq("id", resource_id) \
         .execute()
 
-    # ✅ Send enriched content
-    enriched_content = resource.data.get("enriched_data", "No enrichment available.")
-
+    # ✅ Create a message with available actions
     message = f"📖 **{resource.data['title']}**\n🔗 [{resource.data['url']}]({resource.data['url']})\n\n"
-    message += f"💡 **Key Insights:**\n{enriched_content}"
+    message += "What would you like to do next? 👇"
 
-    await query.message.reply_text(message, parse_mode="Markdown")
+    # ✅ Create action buttons
+    keyboard = [
+        [InlineKeyboardButton("📜 Get TL;DR", callback_data=f"get_tldr_{resource_id}")],
+        [InlineKeyboardButton("📄 View PDF", callback_data=f"view_pdf_{resource_id}")],
+        [InlineKeyboardButton("🔗 Explore Related Topics", callback_data=f"explore_topics_{resource_id}")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await query.message.reply_text(message, reply_markup=reply_markup, parse_mode="Markdown")
     await query.answer()  # ✅ Closes the button interaction
+
+
+# ✅ Function to handle user clicking "Get TL;DR"
+async def handle_tldr_request(update: Update, context: CallbackContext):
+    """Sends a TL;DR of the selected resource."""
+    query: CallbackQuery = update.callback_query
+    resource_id = query.data.replace("get_tldr_", "")
+
+    # ✅ Fetch TL;DR from Supabase
+    resource = supabase_client.table("resources") \
+        .select("summary") \
+        .eq("id", resource_id) \
+        .single() \
+        .execute()
+
+    if not resource.data:
+        await query.answer("❌ TL;DR not available.")
+        return
+
+    message = f"📜 **TL;DR:**\n{resource.data['summary']}"
+    await query.message.reply_text(message, parse_mode="Markdown")
+    await query.answer()
+
+
+# ✅ Function to handle user clicking "View PDF"
+async def handle_pdf_request(update: Update, context: CallbackContext):
+    """Sends the user a PDF link of the resource."""
+    query: CallbackQuery = update.callback_query
+    resource_id = query.data.replace("view_pdf_", "")
+
+    # ✅ Fetch PDF URL from Supabase
+    # resource = supabase_client.table("resources") \
+    #     .select("pdf_url") \
+    #     .eq("id", resource_id) \
+    #     .single() \
+    #     .execute()
+
+    # if not resource.data or not resource.data["pdf_url"]:
+    #     await query.answer("❌ PDF not available for this resource.")
+    #     return
+
+    # message = f"📄 **View the full article:** [Download PDF]({resource.data['pdf_url']})"
+    # await query.message.reply_text(message, parse_mode="Markdown")
+    await query.answer("❌ PDF not available for this resource.")
+    await query.answer()
+
+
+# ✅ Function to handle user clicking "Explore Related Topics"
+async def handle_explore_topics(update: Update, context: CallbackContext):
+    """Fetches related topics based on enrichment."""
+    query: CallbackQuery = update.callback_query
+    # resource_id = query.data.replace("explore_topics_", "")
+
+    # # ✅ Fetch Related Concepts from Supabase
+    # resource = supabase_client.table("resources") \
+    #     .select("enriched_data") \
+    #     .eq("id", resource_id) \
+    #     .single() \
+    #     .execute()
+
+    # if not resource.data or not resource.data["enriched_data"]:
+    #     await query.answer("❌ No related topics found.")
+    #     return
+
+    # enriched_data = resource.data["enriched_data"]
+    # related_concepts = enriched_data.get("related_concepts", [])
+
+    # if not related_concepts:
+    #     await query.answer("❌ No related topics found.")
+    #     return
+
+    # message = "🔗 **Explore Related Topics:**\n"
+    # for concept in related_concepts:
+    #     message += f"• {concept}\n"
+
+    # await query.message.reply_text(message, parse_mode="Markdown")
+    await query.answer("❌ No related topics found.")
+    await query.answer()
 
 # ✅ Handle Incoming Text Messages
 async def handle_message(update: Update, context: CallbackContext):
@@ -199,7 +290,14 @@ telegram_app.add_handler(CommandHandler("start", start))
 telegram_app.add_handler(CommandHandler("queue_status", queue_status))
 telegram_app.add_handler(CommandHandler("latest_resources", show_latest_processed_resources_list))
 telegram_app.add_handler(CallbackQueryHandler(handle_resource_selection))
+telegram_app.add_handler(CommandHandler("latest_resources", show_latest_processed_resources_list))
+telegram_app.add_handler(CallbackQueryHandler(handle_resource_selection, pattern="view_resource_"))
+telegram_app.add_handler(CallbackQueryHandler(handle_tldr_request, pattern="get_tldr_"))
+telegram_app.add_handler(CallbackQueryHandler(handle_pdf_request, pattern="view_pdf_"))
+telegram_app.add_handler(CallbackQueryHandler(handle_explore_topics, pattern="explore_topics_"))
 telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
+
 
 
 # ✅ Background Task to Start Telegram Bot
