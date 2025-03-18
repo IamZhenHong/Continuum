@@ -1,20 +1,28 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from src.config.settings import settings
-from src.routers import messages, processing, intent_router, summarisation
 import logging
+import asyncio
+from src.config.settings import settings
+from src.routers import messages, processing
+from src.utils.redis_helper import redis_client
+from src.routers.processing import run_queue_processing
+# ✅ Initialize Logging
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 # ✅ Initialize FastAPI App
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
-    description="Hyperflow AI Assistant API for managing learning resources."
+    description="Hyperflow AI Assistant API for managing learning resources.",
+    docs_url="/docs",  # Swagger UI endpoint
+    redoc_url="/redoc",  # ReDoc UI endpoint
+    openapi_url="/openapi.json"  # OpenAPI schema
 )
 
-# ✅ Setup CORS Middleware
+# ✅ CORS Configuration (Allow only trusted origins)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Change this to specific origins in production
+    allow_origins=settings.ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -23,21 +31,61 @@ app.add_middleware(
 # ✅ Include API Routers
 app.include_router(messages.router, prefix="/messages", tags=["Messages"])
 app.include_router(processing.router, prefix="/processing", tags=["Processing"])
-app.include_router(intent_router.router, prefix="/intent", tags=["Intent"])
-app.include_router(summarisation.router, prefix="/summarise", tags=["Summarisation"])
 
 # ✅ Root Endpoint
-@app.get("/")
+@app.get("/", tags=["Root"])
 async def root():
-    return {"message": f"Welcome to {settings.APP_NAME} API!"}
+    return {"message": f"Welcome to {settings.APP_NAME} API!", "version": settings.APP_VERSION}
 
-# ✅ Startup Event (Optional: Logging, DB Checks, etc.)
+
+# ✅ Startup Event (System Initialization)
 @app.on_event("startup")
 async def startup_event():
     logging.info(f"🚀 {settings.APP_NAME} is starting...")
     logging.info(f"🌍 Environment: {settings.ENV}")
 
-# ✅ Shutdown Event
+    # ✅ Verify External Services Connectivity (Redis, Supabase, etc.)
+    try:
+        from src.utils.redis_helper import redis_client
+        redis_client.ping()  # Check Redis Connection
+        logging.info("✅ Redis connection established.")
+    except Exception as e:
+        logging.error(f"❌ Redis connection failed: {e}")
+
+    try:
+        from src.config.settings import supabase_client
+        response = supabase_client.auth.sign_out()
+        logging.info("✅ Supabase connected.")
+    except Exception as e:
+        logging.error(f"❌ Supabase connection failed: {e}")
+
+
+    try:
+        from src.bot import start_bot
+        asyncio.create_task(start_bot())
+        logging.info("✅ Telegram bot started.")
+    except Exception as e:
+        logging.error(f"❌ Telegram bot failed to start: {e}")
+
+    try:
+        asyncio.create_task(run_queue_processing())
+        logging.info("✅ Queue processing started.")
+    except Exception as e:
+        logging.error(f"❌ Queue processing failed to start: {e}")
+
+    logging.info("📡 All external services checked.")
+
+
+# ✅ Shutdown Event (Cleanup Tasks)
 @app.on_event("shutdown")
 async def shutdown_event():
     logging.info(f"🛑 {settings.APP_NAME} is shutting down...")
+
+    # ✅ Perform Cleanup if Needed (Close DB Connections, Flush Queues, etc.)
+    try:
+        redis_client.close()
+        logging.info("✅ Redis connection closed.")
+    except Exception as e:
+        logging.warning(f"⚠️ Error closing Redis: {e}")
+
+    logging.info("🔒 API shutdown complete.")

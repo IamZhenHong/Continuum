@@ -1,64 +1,65 @@
-from __future__ import annotations
-
 import os
-from typing import Optional, Literal
-
-from pydantic import BaseModel, BaseSettings, Field, SecretStr
+from pydantic import  Field, SecretStr
+from pydantic_settings import BaseSettings
 from dotenv import load_dotenv
 from openai import OpenAI
 import redis
 from supabase import create_client, Client
 
-# ✅ Load environment variables from .env
+# ✅ Load environment variables from .env file
 load_dotenv()
 
 
-class RedisSettings(BaseModel):
+class RedisSettings(BaseSettings):
     REDIS_URL: str = "redis://localhost:6379/0"
-    QUEUE_PROCESSING_COUNT: str = "queue:processing_count"
-    QUEUE_ESTIMATED_TIME: str = "queue:estimated_time"
-    RESOURCE_STATUS_PREFIX: str = "resource:status:"
+    REDIS_QUEUE_PROCESSING_COUNT: str = "queue:processing_count"
+    REDIS_QUEUE_ESTIMATED_TIME: str = "queue:estimated_time"
+    REDIS_RESOURCE_STATUS_PREFIX: str = "resource:status:"
 
 
-class SupabaseSettings(BaseModel):
-    SUPABASE_URL: str
-    SUPABASE_KEY: SecretStr  # ✅ Stored securely
+class SupabaseSettings(BaseSettings):
+    SUPABASE_URL: str = Field(..., env="SUPABASE_URL")
+    SUPABASE_KEY: SecretStr = Field(..., env="SUPABASE_KEY")
 
 
-class TelegramSettings(BaseModel):
-    TELEGRAM_BOT_TOKEN: SecretStr
+class TelegramSettings(BaseSettings):
+    TELEGRAM_BOT_TOKEN: SecretStr = Field(..., env="TELEGRAM_BOT_TOKEN")
 
     @property
     def TELEGRAM_API_URL(self) -> str:
         return f"https://api.telegram.org/bot{self.TELEGRAM_BOT_TOKEN.get_secret_value()}/sendMessage"
 
 
-class OpenAISettings(BaseModel):
-    OPENAI_API_KEY: SecretStr
-    OPENAI_MODEL: Literal["gpt-4o", "gpt-4o-mini", "gpt-3.5-turbo"] = "gpt-4o"
+class OpenAISettings(BaseSettings):
+    OPENAI_API_KEY: SecretStr = Field(..., env="OPENAI_API_KEY")
+    OPENAI_MODEL: str = "gpt-4o"
 
 
-class FirecrawlSettings(BaseModel):
-    FIRECRAWL_API_KEY: SecretStr
+class FirecrawlSettings(BaseSettings):
+    FIRECRAWL_API_KEY: SecretStr = Field(..., env="FIRECRAWL_API_KEY")
 
 
-class DiffbotSettings(BaseModel):
-    DIFFBOT_TOKEN: SecretStr
+class DiffbotSettings(BaseSettings):
+    DIFFBOT_TOKEN: SecretStr = Field(..., env="DIFFBOT_TOKEN")
 
 
 class Settings(BaseSettings):
     # ✅ App Metadata
     APP_NAME: str = "Hyperflow AI Assistant"
     APP_VERSION: str = "0.1.0"
-    ENV: Literal["local", "dev", "prod"] = Field(default="dev")
+    ENV: str = Field(default="dev", env="ENV")
+    APP_BASE_URL: str = Field(default="http://localhost:8000", env="APP_BASE_URL")
+
+      # ✅ CORS Settings
+    ALLOWED_ORIGINS: list[str] = Field(default=["*"], env="ALLOWED_ORIGINS")  # Allow all by default
 
     # ✅ External Services
     REDIS: RedisSettings = RedisSettings()
-    SUPABASE: SupabaseSettings
-    TELEGRAM: TelegramSettings
-    OPENAI: OpenAISettings
-    FIRECRAWL: FirecrawlSettings
-    DIFFBOT: DiffbotSettings
+    SUPABASE: SupabaseSettings = SupabaseSettings()
+    TELEGRAM: TelegramSettings = TelegramSettings()
+    OPENAI: OpenAISettings = OpenAISettings()
+    FIRECRAWL: FirecrawlSettings = FirecrawlSettings()
+    DIFFBOT: DiffbotSettings = DiffbotSettings()
 
     # ✅ Misc Settings
     DATA_RETENTION_DAYS: int = 30
@@ -85,3 +86,5 @@ supabase_client: Client = create_client(
     settings.SUPABASE.SUPABASE_KEY.get_secret_value()
 )
 
+# ✅ Debugging: Print Loaded Settings
+print("🔹 Loaded Settings:", settings.dict(exclude={"SUPABASE.SUPABASE_KEY", "TELEGRAM.TELEGRAM_BOT_TOKEN", "OPENAI.OPENAI_API_KEY", "FIRECRAWL.FIRECRAWL_API_KEY", "DIFFBOT.DIFFBOT_TOKEN"}))  # Hide secrets

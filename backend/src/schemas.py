@@ -1,4 +1,6 @@
 from pydantic import BaseModel, validator
+from typing import List
+from pydantic import Field
 
 
 
@@ -14,19 +16,21 @@ class MessageCreate(BaseModel):
             raise ValueError("message_type must be 'text', 'link', or 'image'")
         return v
 
+class IntentRouterRequest(BaseModel):
+    user_id: int
+    intent: str
+    message: str
+    resource_id: int = None
 
-class SummariseLinkRequest(BaseModel):
+
+class ExtractAndSummariseLinkRequest(BaseModel):
     user_id: int
     message: str
     resource_id: int
-    message_type: str
+    # message_type: str
 
 class SummariseLinkResponse(BaseModel):
     summary: str
-
-
-class IntentRouterRequest(BaseModel):
-    message: str
 
 
 class LlmIntentClassifierResponse(BaseModel):
@@ -37,8 +41,23 @@ class PreprocessResourceRequest(BaseModel):
     message: str
     message_type: str
 
-class AddToLearningQueueRequest(BaseModel):
+class AddToProcessingQueueRequest(BaseModel):
     user_id: int
     message: str
     resource_id: int
-    message_type: str
+
+
+class AddToProcessingQueueResponse(BaseModel):
+    message: str
+
+class EnrichResourceRequest(BaseModel):
+    user_id: int
+    message: str
+    resource_id: int
+
+class EnrichedResourceResponse(BaseModel):
+    main_concept: str = Field(..., description="The primary theme of the resource.")
+    key_keywords: List[str] = Field(...,  description="Important keywords related to the resource.")
+    related_concepts: List[str] = Field(..., description="Concepts closely related to this topic.")
+    follow_up_questions: List[str] = Field(..., description="Questions a learner might ask to explore further.")
+    actionable_insights: List[str] = Field(..., description="Practical takeaways from the resource.")
