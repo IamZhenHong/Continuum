@@ -72,7 +72,7 @@ async def store_message(data: schemas.MessageCreate):
         if url:
             resource_response = supabase_client.table("resources").insert({
                 "user_id": user_id,
-                "source": url,
+                "url": url,
                 "created_at": datetime.utcnow().isoformat(),
                 "message_id": createdMessage.data[0]["id"]
             }).execute()

@@ -62,3 +62,14 @@ class EnrichedResourceResponse(BaseModel):
     related_concepts: List[str] = Field(..., description="Concepts closely related to this topic.")
     follow_up_questions: List[str] = Field(..., description="Questions a learner might ask to explore further.")
     actionable_insights: List[str] = Field(..., description="Practical takeaways from the resource.")
+
+class EnrichSubresourcesRequest(BaseModel):
+    resource_id: int
+
+class ProcessSubresourceResponse(BaseModel):
+    summary: str
+    title: str
+
+class ProcessResourceResponse(BaseModel):
+    summary: str
+    title: str

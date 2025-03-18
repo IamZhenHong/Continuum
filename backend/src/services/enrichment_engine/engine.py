@@ -77,3 +77,16 @@ For the resource below, extract:
     except Exception as e:
         logging.error(f"❌ Unexpected Error in enrichment: {str(e)}")
         return {"status": "error", "message": "An unexpected error occurred during enrichment."}
+
+
+def enrich_subresources(data: schemas.EnrichSubresourcesRequest):
+    """
+    Enriches subresources of a main resource.
+
+    Args:
+        data (EnrichSubresourcesRequest): The request containing the main resource ID.
+
+    Returns:
+        dict: Enrichment status and enriched data.
+    """
+    urls = extract_urls()

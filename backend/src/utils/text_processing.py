@@ -16,6 +16,19 @@ def extract_url(text: str) -> Optional[str]:
     match = re.search(url_pattern, text)
     return match.group(0).rstrip('.,)') if match else None
 
+def extract_urls(text: str) -> list:
+    """
+    Extracts all valid URLs from the given text.
+    
+    Args:
+        text (str): The input text containing possible URLs.
+    
+    Returns:
+        list: The extracted URLs.
+    """
+    url_pattern = r"(https?://[^\s]+)"
+    return re.findall(url_pattern, text)
+
 def extract_diffbot_text(response_data: Dict[str, Any]) -> str:
     """
     Extracts the main text content from a Diffbot API response.
