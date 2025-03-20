@@ -10,6 +10,7 @@ from src.config.settings import supabase_client
 import httpx  # Use async HTTP client
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import CallbackQueryHandler
+from src.services.generate_pdf import generate_pdf, upload_pdf_to_supabase, save_pdf_locally
 
 # ✅ Initialize Router
 router = APIRouter()
@@ -104,6 +105,22 @@ async def handle_resource_selection(update: Update, context: CallbackContext):
     query: CallbackQuery = update.callback_query
     user_telegram_id = query.from_user.id
 
+    logging.info(f"📥 Received resource selection query: {query.data}")
+
+    # ✅ Extract and ensure `resource_id` is an integer
+    if query.data.startswith("view_resource_"):
+        try:
+            resource_id = int(query.data.replace("view_resource_", ""))
+            logging.info(f"✅ Extracted Resource ID: {resource_id}")
+        except ValueError:
+            logging.error("❌ Invalid resource ID format.")
+            await query.answer("❌ Invalid resource ID format.")
+            return
+    else:
+        logging.error("❌ Invalid request format received.")
+        await query.answer("❌ Invalid request format.")
+        return
+
     # ✅ Fetch user ID from Supabase
     user_data = supabase_client.table("users") \
         .select("id") \
@@ -116,9 +133,6 @@ async def handle_resource_selection(update: Update, context: CallbackContext):
 
     user_id = user_data.data[0]["id"]
 
-    # ✅ Extract resource ID from callback_data
-    resource_id = query.data.replace("view_resource_", "")
-
     # ✅ Fetch the resource details
     resource = supabase_client.table("resources") \
         .select("id, title, url, summary") \
@@ -126,6 +140,8 @@ async def handle_resource_selection(update: Update, context: CallbackContext):
         .eq("user_id", user_id) \
         .single() \
         .execute()
+
+    logging.info(f"📖 Retrieved resource: {resource}")
 
     if not resource.data:
         await query.answer("❌ Resource not found.")
@@ -136,10 +152,6 @@ async def handle_resource_selection(update: Update, context: CallbackContext):
         .eq("id", resource_id) \
         .execute()
 
-    # ✅ Create a message with available actions
-    message = f"📖 **{resource.data['title']}**\n🔗 [{resource.data['url']}]({resource.data['url']})\n\n"
-    message += "What would you like to do next? 👇"
-
     # ✅ Create action buttons
     keyboard = [
         [InlineKeyboardButton("📜 Get TL;DR", callback_data=f"get_tldr_{resource_id}")],
@@ -148,8 +160,11 @@ async def handle_resource_selection(update: Update, context: CallbackContext):
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
+    message = f"📖 **{resource.data['title']}**\n🔗 [{resource.data['url']}]({resource.data['url']})\n\n"
+    message += "What would you like to do next? 👇"
+
     await query.message.reply_text(message, reply_markup=reply_markup, parse_mode="Markdown")
-    await query.answer()  # ✅ Closes the button interaction
+    await query.answer()
 
 
 # ✅ Function to handle user clicking "Get TL;DR"
@@ -174,27 +189,132 @@ async def handle_tldr_request(update: Update, context: CallbackContext):
     await query.answer()
 
 
-# ✅ Function to handle user clicking "View PDF"
+from telegram import CallbackQuery
+
 async def handle_pdf_request(update: Update, context: CallbackContext):
-    """Sends the user a PDF link of the resource."""
+    """Handles a user's request to view a PDF of the enriched resource."""
     query: CallbackQuery = update.callback_query
-    resource_id = query.data.replace("view_pdf_", "")
+    user_telegram_id = query.from_user.id
+
+    logging.info(f"📥 Received PDF request. Query Data: {query.data}")
+
+    # ✅ Extract and Convert resource_id to an integer
+    if query.data.startswith("view_pdf_"):
+        try:
+            resource_id = int(query.data.replace("view_pdf_", ""))
+            logging.info(f"✅ Extracted Resource ID: {resource_id}")
+        except ValueError:
+            logging.error("❌ Invalid resource ID format.")
+            await query.answer("❌ Invalid resource ID format.")
+            return
+    else:
+        logging.error("❌ Invalid request format received.")
+        await query.answer("❌ Invalid request format.")
+        return
+
+    # ✅ Fetch user ID from Supabase
+    try:
+        user_data = supabase_client.table("users") \
+            .select("id") \
+            .eq("telegram_id", user_telegram_id) \
+            .execute()
+
+        if not user_data.data:
+            logging.error("❌ User not found in the database.")
+            await query.answer("❌ User not found.")
+            return
+
+        user_id = user_data.data[0]["id"]
+        logging.info(f"✅ User ID: {user_id}")
+
+    except Exception as e:
+        logging.error(f"❌ Supabase query error (user lookup): {e}")
+        await query.answer("❌ Internal error. Please try again.")
+        return
 
     # ✅ Fetch PDF URL from Supabase
-    # resource = supabase_client.table("resources") \
-    #     .select("pdf_url") \
-    #     .eq("id", resource_id) \
-    #     .single() \
-    #     .execute()
+    try:
+        resource = supabase_client.table("resources") \
+            .select("pdf_url") \
+            .eq("id", resource_id) \
+            .eq("user_id", user_id) \
+            .single() \
+            .execute()
 
-    # if not resource.data or not resource.data["pdf_url"]:
-    #     await query.answer("❌ PDF not available for this resource.")
-    #     return
+        if resource.data and resource.data.get("pdf_url"):
+            pdf_url = resource.data["pdf_url"]
+            logging.info(f"📄 PDF already exists: {pdf_url}")
 
-    # message = f"📄 **View the full article:** [Download PDF]({resource.data['pdf_url']})"
-    # await query.message.reply_text(message, parse_mode="Markdown")
-    await query.answer("❌ PDF not available for this resource.")
-    await query.answer()
+            await query.message.reply_text(
+                f"📄 Your learning resource is ready! [Download PDF]({pdf_url})",
+                parse_mode="Markdown"
+            )
+            await query.answer()
+            return  # ✅ Exit early since PDF is already available
+        else:
+            logging.info("⚠️ PDF not found. Proceeding with generation.")
+
+    except Exception as e:
+        logging.error(f"❌ Supabase query error (PDF lookup): {e}")
+        await query.answer("❌ Error retrieving PDF. Please try again.")
+        return
+
+    # ✅ Fetch enrichment data for the resource
+    try:
+        enrichment_data = supabase_client.table("ai_enrichments") \
+            .select("*") \
+            .eq("resource_id", resource_id) \
+            .single() \
+            .execute()
+
+        if not enrichment_data.data:
+            logging.error("❌ No enrichment data found. Cannot generate PDF.")
+            await query.answer("❌ No enrichment data found. Cannot generate PDF.")
+            return
+
+        enriched_content = enrichment_data.data
+        logging.info(f"✅ Enrichment data found for Resource ID: {resource_id}")
+
+    except Exception as e:
+        logging.error(f"❌ Supabase query error (enrichment lookup): {e}")
+        await query.answer("❌ Error retrieving enrichment data. Please try again.")
+        return
+
+    # ✅ Generate PDF
+    try:
+        logging.info(f"📝 Generating PDF for Resource ID: {resource_id}")
+        pdf_buffer = generate_pdf(user_id, resource_id, enriched_content)
+        logging.info("✅ PDF successfully generated.")
+
+    except Exception as e:
+        logging.error(f"❌ PDF generation error: {e}")
+        await query.answer("❌ Failed to generate PDF.")
+        return
+
+    # ✅ Upload PDF to Supabase
+    try:
+        logging.info(f"📤 Uploading PDF for Resource ID: {resource_id}")
+        pdf_url = upload_pdf_to_supabase(user_id, resource_id, pdf_buffer)
+        # pdf_url = save_pdf_locally(user_id, resource_id, pdf_buffer)
+
+        # ✅ Store the new URL in the database
+        supabase_client.table("resources") \
+            .update({"pdf_url": pdf_url}) \
+            .eq("id", resource_id) \
+            .execute()
+
+        logging.info(f"✅ PDF uploaded successfully: {pdf_url}")
+
+        await query.message.reply_text(
+            f"📄 Your learning resource is ready! [Download PDF]({pdf_url})",
+            parse_mode="Markdown"
+        )
+    except Exception as e:
+        logging.error(f"❌ Error uploading PDF to Supabase: {e}")
+        await query.answer("❌ Failed to upload PDF.")
+        return
+
+    await query.answer()  # ✅ Closes the button interaction
 
 
 # ✅ Function to handle user clicking "Explore Related Topics"
@@ -288,8 +408,6 @@ def send_telegram_message(user_id: int, message: str):
 # ✅ Register Handlers
 telegram_app.add_handler(CommandHandler("start", start))
 telegram_app.add_handler(CommandHandler("queue_status", queue_status))
-telegram_app.add_handler(CommandHandler("latest_resources", show_latest_processed_resources_list))
-telegram_app.add_handler(CallbackQueryHandler(handle_resource_selection))
 telegram_app.add_handler(CommandHandler("latest_resources", show_latest_processed_resources_list))
 telegram_app.add_handler(CallbackQueryHandler(handle_resource_selection, pattern="view_resource_"))
 telegram_app.add_handler(CallbackQueryHandler(handle_tldr_request, pattern="get_tldr_"))

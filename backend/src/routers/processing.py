@@ -17,65 +17,34 @@ import asyncio
 import logging
 
 
-async def process_resource(resource_id: int, user_id: int, message: str):
+from celery import shared_task
+
+@shared_task
+def process_resource(resource_id: int, user_id: int, message: str):
+    """Processes a resource asynchronously using Celery"""
     try:
-        logging.info(
-            f"🚀 Starting processing for Resource ID: {resource_id} (User ID: {user_id})"
-        )
+        logging.info(f"🚀 Processing Resource ID: {resource_id} (User ID: {user_id})")
 
         # ✅ Track in Redis
         redis_client.incr(settings.REDIS.REDIS_QUEUE_PROCESSING_COUNT)
-        redis_client.set(
-            f"{settings.REDIS.REDIS_RESOURCE_STATUS_PREFIX}{user_id}", "processing"
-        )
+        redis_client.set(f"{settings.REDIS.REDIS_RESOURCE_STATUS_PREFIX}{user_id}", "processing")
 
-        queue_status = redis_client.get(settings.REDIS.REDIS_QUEUE_PROCESSING_COUNT)
-        user_status = redis_client.get(
-            f"{settings.REDIS.REDIS_RESOURCE_STATUS_PREFIX}{user_id}"
-        )
-        logging.info(
-            f"🔄 Redis Queue Before Processing: {queue_status}, User {user_id} Status: {user_status}"
-        )
+        logging.info(f"🧠 Running AI enrichment for resource {resource_id}...")
 
-        # ✅ Simulate AI Processing (Replace with real logic)
-        logging.info(
-            f"🧠 Simulating AI processing for {settings.PROCESSING_TIME_ESTIMATE} seconds..."
-        )
-
-        print(resource_id)
-        print(user_id)
-        print(message)
-        response = await enrich(
-            schemas.EnrichResourceRequest(
-                resource_id=resource_id, message=message, user_id=user_id
-            )
-        )
+        # ✅ Call Enrichment Engine
+        response = enrich(schemas.EnrichResourceRequest(resource_id=resource_id, message=message, user_id=user_id))
 
         if not response:
-            raise Exception("Enrichment failed")
-        
-        logging.info(f"✅ AI Processing completed for Resource ID: {resource_id}")
+            raise Exception("❌ Enrichment failed")
+
+        # ✅ Update Supabase - Mark as processed
         supabase_client.table("resources").update({"is_processed": True}).eq("id", resource_id).execute()
-        
-        # ✅ Mark as "completed" in Redis
+
+        # ✅ Update Redis
         redis_client.decr(settings.REDIS.REDIS_QUEUE_PROCESSING_COUNT)
-        redis_client.set(
-            f"{settings.REDIS.REDIS_RESOURCE_STATUS_PREFIX}{user_id}", "completed"
-        )
+        redis_client.set(f"{settings.REDIS.REDIS_RESOURCE_STATUS_PREFIX}{user_id}", "completed")
 
-
-        queue_status_after = redis_client.get(
-            settings.REDIS.REDIS_QUEUE_PROCESSING_COUNT
-        )
-        user_status_after = redis_client.get(
-            f"{settings.REDIS.REDIS_RESOURCE_STATUS_PREFIX}{user_id}"
-        )
-        logging.info(
-            f"🛠️ Redis Queue After Processing: {queue_status_after}, User {user_id} Status: {user_status_after}"
-        )
-
-        # ✅ Update status in Supabase
-        logging.info(f"📝 Updating Supabase status for Resource ID: {resource_id}")
+        # ✅ Mark processing as completed in Supabase
         update_response = (
             supabase_client.table("processing_queue")
             .update({"status": "completed", "completed_at": "now()"})
@@ -86,14 +55,10 @@ async def process_resource(resource_id: int, user_id: int, message: str):
         if update_response.data:
             logging.info(f"✅ Processing complete for Resource ID: {resource_id}")
         else:
-            logging.error(
-                f"❌ Supabase update failed for Resource ID: {resource_id}. Response: {update_response}"
-            )
+            logging.error(f"❌ Supabase update failed for Resource ID: {resource_id}")
 
         # ✅ Reset Redis queue flag if no pending jobs
-        remaining_jobs = int(
-            redis_client.get(settings.REDIS.REDIS_QUEUE_PROCESSING_COUNT) or 0
-        )
+        remaining_jobs = int(redis_client.get(settings.REDIS.REDIS_QUEUE_PROCESSING_COUNT) or 0)
         if remaining_jobs <= 0:
             redis_client.delete("queue:has_pending")
             logging.info("✅ No more pending jobs. Redis queue flag reset.")
@@ -102,20 +67,14 @@ async def process_resource(resource_id: int, user_id: int, message: str):
         logging.error(f"❌ ERROR in processing Resource ID {resource_id}: {str(e)}")
         logging.error(traceback.format_exc())  # Print full error trace
 
-
-async def start_processing(background_tasks: BackgroundTasks):
+def start_processing():
     """
-    Fetches multiple pending jobs from the resource queue and starts processing.
+    Fetches multiple pending jobs from the processing queue and starts processing using Celery.
 
     - Selects the highest-priority pending resources.
     - Updates status to "processing" in Supabase.
-    - Starts async processing for each job.
-
-    Returns:
-        dict: Number of jobs started.
+    - Sends tasks to Celery for parallel execution.
     """
-    
-
     logging.info("🛠️ Checking for pending jobs in the database...")
 
     # ✅ Fetch Multiple Pending Jobs
@@ -137,37 +96,37 @@ async def start_processing(background_tasks: BackgroundTasks):
     for job in jobs.data:
         resource_id, user_id = job["resource_id"], job["user_id"]
 
-        print("Marking resource as processing")
-
         # ✅ Mark as "processing" in Supabase
         supabase_client.table("processing_queue").update(
             {"status": "processing", "started_at": "now()"}
         ).eq("resource_id", resource_id).execute()
 
+        # ✅ Get Message Content
         message_id = (
             supabase_client.table("resources")
             .select("message_id")
             .eq("id", resource_id)
             .execute()
         )
+
         message = (
             supabase_client.table("messages")
             .select("message")
             .eq("id", message_id.data[0]["message_id"])
             .execute()
         )
-        logging.info(f"🚀 Processing started for Resource ID: {resource_id}")
 
-        logging.info(f"🚀 Starting background task for Resource ID: {resource_id}")
-        task = asyncio.create_task(
-            process_resource(resource_id, user_id, message.data[0]["message"])
-        )
-        logging.info(f"🛠️ Background Task Created: {task}")
+        logging.info(f"🚀 Sending task to Celery for Resource ID: {resource_id}")
+
+        # ✅ Send Task to Celery
+        process_resource.delay(resource_id, user_id, message.data[0]["message"])
 
     return {"message": f"Processing started for {len(jobs.data)} resources"}
 
 
-async def run_queue_processing():
+import time
+
+def run_queue_processing():
     """Continuously checks Redis for pending jobs and triggers processing."""
     logging.info("🔄 Queue processing loop started...")
 
@@ -178,9 +137,9 @@ async def run_queue_processing():
 
         if has_pending == "1":
             logging.info("🛠️ Redis detected pending jobs. Processing...")
-            await start_processing(BackgroundTasks())  # ✅ Process multiple jobs
+            start_processing()  # ✅ Now uses Celery
 
-        await asyncio.sleep(3)  # ✅ Check every 3 seconds
+        time.sleep(3)  # ✅ Check every 3 seconds
 
 
 async def add_to_processing_queue(data: schemas.AddToProcessingQueueRequest):
