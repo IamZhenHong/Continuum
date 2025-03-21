@@ -73,3 +73,4 @@ class ProcessSubresourceResponse(BaseModel):
 class ProcessResourceResponse(BaseModel):
     summary: str
     title: str
+

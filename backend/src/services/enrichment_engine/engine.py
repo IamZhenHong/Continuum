@@ -3,6 +3,9 @@ from src import schemas
 from src.config.settings import openai_client, supabase_client
 from src.services.summarise import extract_and_summarise_link
 import traceback
+from src.utils.resource_type_classifier import classify_resource_type
+from src.utils.schema_generator import parse_enrichment_response,generate_dynamic_schema
+import pydantic
 
 def enrich(data: schemas.EnrichResourceRequest):
     """
@@ -25,6 +28,19 @@ def enrich(data: schemas.EnrichResourceRequest):
         processed_resource = extract_and_summarise_link(data)
         logging.info(f"📦 Extracted Resource: {processed_resource}")
 
+        # ✅ Classify resource type
+        resource_type = classify_resource_type(processed_resource.get("url_content"))
+        logging.info(f"🔍 Resource Type: {resource_type}")
+
+        supabase_client.table("resources").update({
+            "type": resource_type
+        }).eq("id", data.resource_id).execute()
+
+        # ✅ Get dynamic enrichment schema
+        enrichment_schema = generate_dynamic_schema(resource_type, data.message, processed_resource.get("url_content"))
+        # dynamic_enrichment_schema = parse_enrichment_response(enrichment_schema)
+
+
         if not processed_resource.get("url_content"):
             logging.warning(f"⚠️ No 'url_content' found for resource {data.resource_id}. Skipping enrichment.")
             return {"status": "error", "message": "No URL content to enrich."}
@@ -33,21 +49,18 @@ def enrich(data: schemas.EnrichResourceRequest):
         user_prompt = f"Enrich resource with content: {processed_resource.get('url_content', 'No content available')}"
         logging.info("🧠 Sending prompt to OpenAI...")
 
+
+
         # ✅ Call OpenAI Enrichment Engine
-        response = openai_client.beta.chat.completions.parse(
+        response = openai_client.chat.completions.create(
             model="gpt-4o",
             messages=[
                 {
                     "role": "system",
-                    "content": """You are an **AI Enrichment Engine**. Your job is to extract **key learning elements** from a given resource.
+                    "content": """You are an **AI Enrichment Engine**. Your job is to extract **key learning elements** from a given resource. Based on the content of the resource, dynamically generate and output the corresponding enrichment schema in JSON format. The schema should contain the appropriate fields based on the resource, and for each field, provide meaningful content extracted from the resource.
 
-For the resource below, extract:
-1️⃣ **Main Concept** - The **primary idea or theme** the resource is about.
-2️⃣ **Key Keywords** - **Most relevant terms** that define this resource (max 5-8).
-3️⃣ **Related Concepts** - Ideas **closely linked** to this resource 
-   (e.g., if the topic is "Lean Startup," related concepts could be "MVP, PMF, Rapid Iteration").
-4️⃣ **Follow-Up Questions** - Thought-provoking **questions** that a learner might ask after reading this.
-5️⃣ **Actionable Insights** - Practical **takeaways** that can be **applied**.
+{enrichment_schema}
+
 """
                 },
                 {
@@ -55,27 +68,27 @@ For the resource below, extract:
                     "content": user_prompt
                 }
             ],
-            response_format=schemas.EnrichedResourceResponse
+
         )
 
         if not response or not response.choices:
             logging.error(f"❌ OpenAI API returned an unexpected response: {response}")
             return {"status": "error", "message": "OpenAI API failed to return choices."}
 
-        content = response.choices[0].message.parsed
+        content = response.choices[0].message.content
         logging.info(f"✅ Enrichment Result: {content}")
 
         # ✅ Store to Supabase
-        supabase_response = supabase_client.table("ai_enrichments").insert({
-            "resource_id": data.resource_id,
-            "main_concept": content.main_concept,
-            "key_keywords": content.key_keywords,
-            "related_concepts": content.related_concepts,
-            "follow_up_questions": content.follow_up_questions,
-            "actionable_insights": content.actionable_insights,
-        }).execute()
+        # supabase_response = supabase_client.table("ai_enrichments").insert({
+        #     "resource_id": data.resource_id,
+        #     "main_concept": content.main_concept,
+        #     "key_keywords": content.key_keywords,
+        #     "related_concepts": content.related_concepts,
+        #     "follow_up_questions": content.follow_up_questions,
+        #     "actionable_insights": content.actionable_insights,
+        # }).execute()
 
-        logging.info(f"📤 Supabase Insert Response: {supabase_response}")
+        # logging.info(f"📤 Supabase Insert Response: {supabase_response}")
 
         if not content:
             logging.error(f"❌ OpenAI returned empty enrichment data for Resource ID: {data.resource_id}")
