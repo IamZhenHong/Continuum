@@ -12,7 +12,7 @@ from src.config.settings import supabase_client
 # ✅ Initialize OpenAI Client
 openai_client = OpenAI(api_key=settings.OPENAI.OPENAI_API_KEY.get_secret_value())
 
-async def extract_and_summarise_link(data: schemas.ExtractAndSummariseLinkRequest):
+def extract_and_summarise_link(data: schemas.ExtractAndSummariseLinkRequest):
     """
     Summarizes an article by extracting content from a given link.
 
@@ -72,7 +72,7 @@ async def extract_and_summarise_link(data: schemas.ExtractAndSummariseLinkReques
                 "title": response.choices[0].message.parsed.title
             }).execute()
             print("Subresource Response", response)
-            
+
 
 
 

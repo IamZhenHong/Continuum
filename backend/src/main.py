@@ -67,11 +67,11 @@ async def startup_event():
     except Exception as e:
         logging.error(f"❌ Telegram bot failed to start: {e}")
 
-    try:
-        asyncio.create_task(run_queue_processing())
-        logging.info("✅ Queue processing started.")
-    except Exception as e:
-        logging.error(f"❌ Queue processing failed to start: {e}")
+    # try:
+    #     asyncio.create_task(run_queue_processing())
+    #     logging.info("✅ Queue processing started.")
+    # except Exception as e:
+    #     logging.error(f"❌ Queue processing failed to start: {e}")
 
     logging.info("📡 All external services checked.")
 

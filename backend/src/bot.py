@@ -80,14 +80,17 @@ async def show_latest_processed_resources_list(update: Update, context: Callback
         .limit(5) \
         .execute()
     
+    print("📋 Latest Processed Resources:", resources.data)
+    
     if not resources.data:
         await update.message.reply_text("✅ No new processed resources. You're all caught up!")
         return
 
     keyboard = [
-        [InlineKeyboardButton(resource["title"], callback_data=f"view_resource_{resource['id']}")]
-        for resource in resources.data
-    ]
+    [InlineKeyboardButton(resource.get("title") or "Untitled Resource", callback_data=f"view_resource_{resource['id']}")]
+    for resource in resources.data
+]
+
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     await update.message.reply_text(
