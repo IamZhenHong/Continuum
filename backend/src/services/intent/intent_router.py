@@ -11,9 +11,9 @@ async def route_intent_action(data: schemas.IntentRouterRequest):
     """
 
     if data.intent == "summarise_link":
-        response = await extract_and_summarise_link(schemas.ExtractAndSummariseLinkRequest(message=data.message, user_id=data.user_id))
+        response = extract_and_summarise_link(schemas.ExtractAndSummariseLinkRequest(message=data.message, user_id=data.user_id, resource_id=data.resource_id))
            # ✅ Send summary via Telegram bot
-        send_telegram_message(data.user_id, f"📚 **Summary:**\n\n{response.diffbot_summary}")
+        send_telegram_message(data.user_id, f"📚 **Summary**\n\n{response['diffbot_summary']}")
 
         return {"status": "success", "message": "Summarized article", "data": response}
     elif data.intent == "add_to_processing_queue":
