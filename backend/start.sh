@@ -24,7 +24,7 @@ tell application "Terminal"
     # Tab 3: Celery Worker
     tell application "System Events" to keystroke "t" using {command down}
     delay 1
-    do script "cd $APP_DIR && source $VENV_PATH && celery -A src.config.celery_config.celery_app worker --loglevel=info --include=src.services.processing_tasks,src.queue.dispatch" in front window
+    do script "cd $APP_DIR && source $VENV_PATH && celery -A src.config.celery_config.celery_app worker --loglevel=info --include=src.services.processing_tasks" in front window
 
     delay 1
 

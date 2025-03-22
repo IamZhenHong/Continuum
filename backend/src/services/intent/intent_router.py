@@ -1,9 +1,9 @@
 
-from src.services.summarise import extract_and_summarise_link
+from src.services.resource_summarizer import extract_and_summarise_link
 from src.config.settings import supabase_client
 import src.schemas as schemas
-from src.routers.processing import add_to_processing_queue
-from src.bot import send_telegram_message
+from src.services.processing_tasks import add_to_processing_queue
+from bot.telegram_interface import send_telegram_message
 
 async def route_intent_action(data: schemas.IntentRouterRequest):
     """

@@ -3,9 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 import logging
 import asyncio
 from src.config.settings import settings
-from src.routers import messages, processing
 from src.utils.redis_helper import redis_client
-from src.routers.processing import run_queue_processing
+
 # ✅ Initialize Logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
@@ -28,9 +27,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ✅ Include API Routers
-app.include_router(messages.router, prefix="/messages", tags=["Messages"])
-app.include_router(processing.router, prefix="/processing", tags=["Processing"])
 
 # ✅ Root Endpoint
 @app.get("/", tags=["Root"])
@@ -61,7 +57,7 @@ async def startup_event():
 
 
     try:
-        from src.bot import start_bot
+        from bot.bot_runner import start_bot
         asyncio.create_task(start_bot())
         logging.info("✅ Telegram bot started.")
     except Exception as e:

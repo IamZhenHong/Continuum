@@ -1,10 +1,10 @@
 import logging
 from src import schemas
 from src.config.settings import openai_client, supabase_client
-from src.services.summarise import extract_and_summarise_link
+from src.services.resource_summarizer import extract_and_summarise_link
 import traceback
 from src.utils.resource_type_classifier import classify_resource_type
-from src.utils.schema_generator import parse_enrichment_response,generate_dynamic_schema
+from src.utils.schema_generator import generate_dynamic_schema
 import pydantic
 
 def enrich(data: schemas.EnrichResourceRequest):
@@ -25,7 +25,12 @@ def enrich(data: schemas.EnrichResourceRequest):
         logging.info(f"📥 Enrichment Input Data: user_id={data.user_id}, message={data.message}")
 
         # ✅ Extract and summarise resource
-        processed_resource = extract_and_summarise_link(data)
+        processed_resource = extract_and_summarise_link(schemas.ExtractAndSummariseLinkRequest(
+            user_id=data.user_id,
+            message=data.message,
+            resource_id=data.resource_id
+        ))
+
         logging.info(f"📦 Extracted Resource: {processed_resource}")
 
         # ✅ Classify resource type
@@ -68,6 +73,7 @@ def enrich(data: schemas.EnrichResourceRequest):
                     "content": user_prompt
                 }
             ],
+            response_format= {"type": "json_object"}
 
         )
 
@@ -78,17 +84,12 @@ def enrich(data: schemas.EnrichResourceRequest):
         content = response.choices[0].message.content
         logging.info(f"✅ Enrichment Result: {content}")
 
-        # ✅ Store to Supabase
-        # supabase_response = supabase_client.table("ai_enrichments").insert({
-        #     "resource_id": data.resource_id,
-        #     "main_concept": content.main_concept,
-        #     "key_keywords": content.key_keywords,
-        #     "related_concepts": content.related_concepts,
-        #     "follow_up_questions": content.follow_up_questions,
-        #     "actionable_insights": content.actionable_insights,
-        # }).execute()
+        supabase_response = supabase_client.table("ai_enrichments").insert({
+            "dynamic_enrichment_data": content,
+            "resource_id": data.resource_id
+        }).execute()
 
-        # logging.info(f"📤 Supabase Insert Response: {supabase_response}")
+        logging.info(f"📤 Supabase Insert Response: {supabase_response}")
 
         if not content:
             logging.error(f"❌ OpenAI returned empty enrichment data for Resource ID: {data.resource_id}")

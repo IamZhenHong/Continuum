@@ -4,14 +4,11 @@ from datetime import datetime
 from fastapi import APIRouter, HTTPException
 from src.config.settings import supabase_client
 import src.schemas as schemas
-from src.services.intent_classifier import classify_intent
-from src.services.intent_router import route_intent_action
+from src.services.intent.intent_classifier import classify_intent
+from src.services.intent.intent_router import route_intent_action
 # ✅ Initialize Router
 from src.utils.text_processing import extract_url
-router = APIRouter()
 
-# ✅ Store user messages & detect intent
-@router.post("/store_message")
 async def store_message(data: schemas.MessageCreate):
     """
     Stores user messages and detects intent.
@@ -91,8 +88,7 @@ async def store_message(data: schemas.MessageCreate):
         raise HTTPException(status_code=500, detail="Unexpected Error")
 
 
-# ✅ Retrieve user messages
-@router.get("/messages/{user_id}")
+# ✅ Get messages for a user
 async def get_messages(user_id: int):
     """
     Retrieves messages for a given user.
@@ -118,8 +114,6 @@ async def get_messages(user_id: int):
         raise HTTPException(status_code=500, detail="Unexpected Error")
 
 
-# ✅ Delete a message
-@router.delete("/delete_message/{message_id}")
 async def delete_message(message_id: int):
     """
     Deletes a user message by ID.

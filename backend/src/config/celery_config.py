@@ -29,7 +29,7 @@ from src.config.celery_config import celery_app
 
 celery_app.conf.beat_schedule = {
     "check-processing-queue-every-5s": {
-        "task": "queue.check_and_dispatch",
+        "task": "check_and_dispatch",
         "schedule": 5.0,  # Every 5 seconds
     },
     # "send-learning-digest-daily": {
