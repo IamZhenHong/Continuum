@@ -4,6 +4,9 @@ from telegram.ext import CallbackContext
 from src.config.settings import supabase_client
 from src.utils.redis_helper import redis_client
 from src.config import settings
+import logging
+from src.utils.redis_helper import redis_client
+from src.config import settings
 
 # ✅ /start Command
 async def start(update: Update, context: CallbackContext):
@@ -14,18 +17,32 @@ async def start(update: Update, context: CallbackContext):
 # ✅ Check Processing Queue Status
 async def queue_status(update: Update, context: CallbackContext):
     """Checks queue status from Redis and sends an update to the user."""
-    pending_count = redis_client.llen("resource_queue")
-    processing_count = redis_client.get(settings.REDIS.REDIS_QUEUE_PROCESSING_COUNT) or 0
-    estimated_time = redis_client.get(settings.PROCESSING_TIME_ESTIMATE) or "Unknown"
+    try:
+        # Check if the required Redis settings are available
+        if not hasattr(settings.REDIS, 'REDIS_QUEUE_PROCESSING_COUNT'):
+            raise ValueError("REDIS_QUEUE_PROCESSING_COUNT setting is missing in the configuration.")
 
-    message = (
-        f"📊 **Queue Status:**\n"
-        f"🔄 Pending: {pending_count}\n"
-        f"⚙️ Processing: {processing_count}\n"
-        f"⏳ Estimated Completion Time: {estimated_time} seconds"
-    )
+        # Retrieve Redis queue status
+        pending_count = redis_client.llen("resource_queue")
+        logging.info(f"REDIS Pending Queue Length: {pending_count}")
 
-    await update.message.reply_text(message)
+        processing_count = redis_client.get(settings.REDIS.REDIS_QUEUE_PROCESSING_COUNT) or 0
+        estimated_time = redis_client.get(settings.PROCESSING_TIME_ESTIMATE) or "Unknown"
+
+        message = (
+            f"📊 **Queue Status:**\n"
+            f"🔄 Pending: {pending_count}\n"
+            f"⚙️ Processing: {processing_count}\n"
+            f"⏳ Estimated Completion Time: {estimated_time} seconds"
+        )
+
+        await update.message.reply_text(message)
+
+    except Exception as e:
+        # Log and send an error message if any issue occurs
+        logging.error(f"Error fetching queue status: {str(e)}")
+        await update.message.reply_text(f"❌ Error fetching queue status: {str(e)}")
+
 
 async def show_latest_processed_resources_list(update: Update, context: CallbackContext):
     """Shows the latest processed resources that the user has not yet viewed."""

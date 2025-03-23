@@ -21,82 +21,67 @@ from reportlab.lib.pagesizes import letter
 from reportlab.lib import colors
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib.styles import getSampleStyleSheet
+from src.config.settings import supabase_client, openai_client
+
+import json
+from io import BytesIO
+from weasyprint import HTML
+from jinja2 import Environment, FileSystemLoader
+import os
+import re
+
+
+
+def ai_enrichment_to_html(enriched_data: dict) -> str:
+    """
+    Uses GPT to generate full HTML from enrichment data directly.
+    Returns a complete HTML string with styling and structure.
+    """
+    prompt = f"""
+You are an expert in HTML and technical writing.
+
+Take the following AI enrichment data and write a full, styled HTML report.
+The HTML must include:
+- <html>, <head>, and <body> tags
+- A header with title and subtitle
+- Multiple content sections with headings and paragraphs
+- Inline CSS styling for clean, modern PDF output (e.g., font-family: 'DejaVu Sans')
+- Do not wrap the HTML in markdown or code blocks
+- Do not explain anything, just return raw HTML
+
+Enrichment data (JSON):
+{json.dumps(enriched_data)}
+    """
+
+    response = openai_client.chat.completions.create(
+        model=settings.OPENAI.OPENAI_MODEL,
+        messages=[
+            {"role": "system", "content": "You turn structured AI enrichment into full HTML reports for PDF export."},
+            {"role": "user", "content": prompt}
+        ]
+    )
+
+    html_content = response.choices[0].message.content.strip()
+
+    # Just in case GPT wrapped it in ```html, strip it
+    html_content = re.sub(r"^```html", "", html_content).strip()
+    html_content = re.sub(r"```$", "", html_content).strip()
+
+    return html_content
 
 
 def generate_pdf(user_id: int, resource_id: int, enriched_data: dict) -> BytesIO:
     """
-    Generates a structured, professional PDF for a given resource with enrichment data.
-
-    Args:
-        user_id (int): The user ID.
-        resource_id (int): The resource ID.
-        enriched_data (dict): Enrichment data containing insights (dynamic JSON).
-
-    Returns:
-        BytesIO: The generated PDF in memory.
+    Converts GPT-generated HTML into a PDF and returns it in memory.
     """
-    buffer = BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=letter)
+    # Step 1: Generate styled HTML from enriched data
+    html_content = ai_enrichment_to_html(enriched_data)
 
-    styles = getSampleStyleSheet()
-    content = []
-
-    # ✅ Title
-    title = Paragraph("<b>📖 Learning Resource Summary</b>", styles['Title'])
-    content.append(title)
-    content.append(Spacer(1, 12))
-
-    # ✅ Metadata
-    metadata = [
-        ["Generated For:", f"User ID: {user_id}"],
-        ["Date:", datetime.now().strftime("%Y-%m-%d")],
-        ["Resource ID:", str(resource_id)],
-    ]
-    metadata_table = Table(metadata, colWidths=[100, 400])
-    metadata_table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
-        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
-        ('GRID', (0, 0), (-1, -1), 1, colors.black),
-    ]))
-    content.append(metadata_table)
-    content.append(Spacer(1, 12))
-
-    # ✅ Parsing the dynamic enrichment schema and adding it to the PDF
-    if enriched_data:
-        # Loop through each field in the dynamic enrichment schema
-        for field, value in enriched_data.items():
-            if isinstance(value, list):
-                value = "\n".join([str(item) for item in value])  # Join list items with new lines
-            elif isinstance(value, dict):
-                # For nested dictionaries, we format the inner content as a table
-                nested_content = [[k, v] for k, v in value.items()]
-                nested_table = Table(nested_content, colWidths=[100, 400])
-                nested_table.setStyle(TableStyle([
-                    ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
-                    ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-                    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                    ('GRID', (0, 0), (-1, -1), 1, colors.black),
-                ]))
-                content.append(Paragraph(f"<b>{field.capitalize()}:</b>", styles['Heading2']))
-                content.append(Spacer(1, 5))
-                content.append(nested_table)
-                content.append(Spacer(1, 12))
-                continue  # Skip the normal text rendering for nested dictionaries
-
-            # Add field name and value to PDF
-            content.append(Paragraph(f"<b>{field.capitalize()}:</b>", styles['Heading2']))
-            content.append(Spacer(1, 5))
-            content.append(Paragraph(value if value else "No data available", styles['Normal']))
-            content.append(Spacer(1, 12))
-
-    # ✅ Build and return PDF
-    doc.build(content)
-    buffer.seek(0)
-    return buffer
-
+    # Step 2: Convert to PDF
+    pdf_io = BytesIO()
+    HTML(string=html_content).write_pdf(pdf_io)
+    pdf_io.seek(0)
+    return pdf_io
 
 import io
 import logging

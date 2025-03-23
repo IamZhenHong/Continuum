@@ -2,7 +2,7 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import CallbackContext
 from src.config.settings import supabase_client
-from src.services.generate_pdf import generate_pdf, upload_pdf_to_supabase
+from src.services.pdf_generation.generate_pdf import generate_pdf, upload_pdf_to_supabase
 import logging
 import json
 

@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>{{ title }}</title>
+  <style>
+    @page {
+      margin: 40px;
+    }
+
+    body {
+      font-family: "DejaVu Sans", sans-serif;
+      margin: 0 auto;
+      padding: 40px;
+      max-width: 850px;
+      background-color: #ffffff;
+      color: #2c3e50;
+      line-height: 1.7;
+    }
+
+    .header {
+      text-align: center;
+      margin-bottom: 50px;
+      border-bottom: 2px solid #e0e0e0;
+      padding-bottom: 20px;
+    }
+
+    .header h1 {
+      font-size: 2.6em;
+      margin: 0;
+      color: #1a1a1a;
+    }
+
+    .subtitle {
+      font-size: 1.1em;
+      color: #666;
+      margin-top: 10px;
+    }
+
+    .section {
+      padding: 30px 30px 20px;
+      margin-bottom: 30px;
+      border-radius: 10px;
+      background: #f9f9f9;
+      border-left: 6px solid #4a90e2;
+    }
+
+    .section.alt {
+      background: #fef8f1;
+      border-left-color: #f39c12;
+    }
+
+    .section h2 {
+      font-size: 1.5em;
+      color: #333;
+      margin-bottom: 10px;
+    }
+
+    .section p {
+      font-size: 1.05em;
+      color: #444;
+      margin: 0;
+    }
+
+    .section-icon {
+      float: right;
+      font-size: 1.8em;
+      opacity: 0.3;
+      margin-left: 10px;
+    }
+
+    .footer {
+      text-align: center;
+      margin-top: 60px;
+      font-size: 0.9em;
+      color: #999;
+      border-top: 1px solid #eee;
+      padding-top: 20px;
+    }
+
+    .page-break {
+      page-break-before: always;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <h1>{{ title }}</h1>
+    <p class="subtitle">{{ subtitle }}</p>
+  </div>
+
+  {% if sections %}
+    {% for section in sections %}
+    <div class="section {% if loop.index % 2 == 0 %}alt{% endif %}">
+        <h2>{{ section.heading }}
+        <span class="section-icon">{% if loop.index % 2 == 0 %}■{% else %}◆{% endif %}</span>
+        </h2>
+        <p>{{ section.content }}</p>
+    </div>
+    {% endfor %}
+
+  {% else %}
+    <p>No content available for this report.</p>
+  {% endif %}
+
+  <div class="footer">
+    <p>Generated on {{ generated_date }}</p>
+  </div>
+
+</body>
+</html>

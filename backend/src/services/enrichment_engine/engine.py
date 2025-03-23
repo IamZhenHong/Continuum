@@ -7,6 +7,9 @@ from src.utils.resource_type_classifier import classify_resource_type
 from src.utils.schema_generator import generate_dynamic_schema
 import pydantic
 
+import traceback
+import logging
+
 def enrich(data: schemas.EnrichResourceRequest):
     """
     Enriches a resource with additional data.
@@ -21,30 +24,34 @@ def enrich(data: schemas.EnrichResourceRequest):
         dict: Enrichment status and enriched data.
     """
     try:
+        # Initial Logging: Enrichment Process Start
         logging.info(f"🔄 Starting enrichment for Resource ID: {data.resource_id}")
         logging.info(f"📥 Enrichment Input Data: user_id={data.user_id}, message={data.message}")
 
         # ✅ Extract and summarise resource
+        logging.info("🧑‍💻 Extracting and summarizing resource...")
         processed_resource = extract_and_summarise_link(schemas.ExtractAndSummariseLinkRequest(
             user_id=data.user_id,
             message=data.message,
             resource_id=data.resource_id
         ))
 
-        logging.info(f"📦 Extracted Resource: {processed_resource}")
+        logging.debug(f"📦 Extracted Resource: {processed_resource}")
 
         # ✅ Classify resource type
+        logging.info("🔍 Classifying resource type...")
         resource_type = classify_resource_type(processed_resource.get("url_content"))
         logging.info(f"🔍 Resource Type: {resource_type}")
 
+        # Update resource type in Supabase
+        logging.info(f"🔄 Updating resource type in Supabase...")
         supabase_client.table("resources").update({
             "type": resource_type
         }).eq("id", data.resource_id).execute()
 
         # ✅ Get dynamic enrichment schema
+        logging.info("🔄 Generating dynamic enrichment schema...")
         enrichment_schema = generate_dynamic_schema(resource_type, data.message, processed_resource.get("url_content"))
-        # dynamic_enrichment_schema = parse_enrichment_response(enrichment_schema)
-
 
         if not processed_resource.get("url_content"):
             logging.warning(f"⚠️ No 'url_content' found for resource {data.resource_id}. Skipping enrichment.")
@@ -54,9 +61,8 @@ def enrich(data: schemas.EnrichResourceRequest):
         user_prompt = f"Enrich resource with content: {processed_resource.get('url_content', 'No content available')}"
         logging.info("🧠 Sending prompt to OpenAI...")
 
-
-
         # ✅ Call OpenAI Enrichment Engine
+        logging.info("🔄 Calling OpenAI for enrichment...")
         response = openai_client.chat.completions.create(
             model="gpt-4o",
             messages=[
@@ -73,8 +79,7 @@ def enrich(data: schemas.EnrichResourceRequest):
                     "content": user_prompt
                 }
             ],
-            response_format= {"type": "json_object"}
-
+            response_format={"type": "json_object"}
         )
 
         if not response or not response.choices:
@@ -84,6 +89,8 @@ def enrich(data: schemas.EnrichResourceRequest):
         content = response.choices[0].message.content
         logging.info(f"✅ Enrichment Result: {content}")
 
+        # ✅ Insert the enriched data into Supabase
+        logging.info("📤 Inserting enriched data into Supabase...")
         supabase_response = supabase_client.table("ai_enrichments").insert({
             "dynamic_enrichment_data": content,
             "resource_id": data.resource_id
@@ -96,7 +103,13 @@ def enrich(data: schemas.EnrichResourceRequest):
             return {"status": "error", "message": "OpenAI returned empty content."}
 
         logging.info(f"✅ Enrichment completed successfully for Resource ID: {data.resource_id}")
-        return content
+
+        # # ✅ Update resource status to 'processed'
+        # logging.info("📝 Updating resource status to 'processed' in Supabase...")
+        # response = supabase_client.table("resources").update({"status": "processed"}).eq("id", data.resource_id).execute()
+        # logging.info(f"✅ Resource status updated: {response}")
+
+        return {"status": "success", "message": "Resource enriched and updated successfully."}
 
     except ValueError as ve:
         logging.error(f"❌ JSON Parsing Error: {str(ve)}")
@@ -104,7 +117,7 @@ def enrich(data: schemas.EnrichResourceRequest):
 
     except Exception as e:
         logging.error(f"❌ Unexpected Error in enrichment: {str(e)}")
-        logging.error(traceback.format_exc())
+        logging.error(traceback.format_exc())  # Logs the full stack trace for debugging
         return {"status": "error", "message": "An unexpected error occurred during enrichment."}
 
 def enrich_subresources(data: schemas.EnrichSubresourcesRequest):
