@@ -10,6 +10,7 @@ import time
 import logging
 from celery import shared_task
 from src.config.settings import supabase_client, redis_client
+from bot.telegram_interface import send_telegram_message
 
 logger = logging.getLogger(__name__)
 
@@ -134,6 +135,11 @@ async def add_to_processing_queue(data: schemas.AddToProcessingQueueRequest):
 
     if insert_response.data:
         logging.info(f"✅ Added Resource ID {data.resource_id} to processing queue")
+        send_telegram_message(
+            data.user_id,
+            f"""✅ Added to your queue! I’ll send you the distilled goodness once it’s ready. 🚀"""
+        )
+
     else:
         logging.error(
             f"❌ Error adding Resource ID {data.resource_id} to processing queue"

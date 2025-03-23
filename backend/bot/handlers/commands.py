@@ -18,30 +18,49 @@ async def start(update: Update, context: CallbackContext):
 async def queue_status(update: Update, context: CallbackContext):
     """Checks queue status from Redis and sends an update to the user."""
     try:
-        # Check if the required Redis settings are available
-        if not hasattr(settings.REDIS, 'REDIS_QUEUE_PROCESSING_COUNT'):
+        logging.info("🔍 Checking queue status...")
+
+        # Debug: Print all relevant Redis keys
+        logging.debug("🔧 Fetching Redis keys for status...")
+
+        # Check if the Redis settings are defined
+        if not hasattr(settings.settings.REDIS, 'REDIS_QUEUE_PROCESSING_COUNT'):
             raise ValueError("REDIS_QUEUE_PROCESSING_COUNT setting is missing in the configuration.")
+        # if not hasattr(settings, 'PROCESSING_TIME_ESTIMATE'):
+        #     raise ValueError("PROCESSING_TIME_ESTIMATE setting is missing.")
 
-        # Retrieve Redis queue status
-        pending_count = redis_client.llen("resource_queue")
-        logging.info(f"REDIS Pending Queue Length: {pending_count}")
+        # Fetch from Redis
+        queue_key = "resource_queue"
+        processing_key = settings.settings.REDIS.REDIS_QUEUE_PROCESSING_COUNT
+        estimate_key = settings.settings.PROCESSING_TIME_ESTIMATE
 
-        processing_count = redis_client.get(settings.REDIS.REDIS_QUEUE_PROCESSING_COUNT) or 0
-        estimated_time = redis_client.get(settings.PROCESSING_TIME_ESTIMATE) or "Unknown"
+        logging.debug(f"📦 Queue key: {queue_key}")
+        logging.debug(f"⚙️ Processing count key: {processing_key}")
+        # logging.debug(f"⏳ Estimate key: {estimate_key}")
+
+        pending_count = redis_client.llen(queue_key)
+        processing_count = redis_client.get(processing_key)
+        estimated_time = redis_client.get(estimate_key)
+
+        # Safe fallback handling
+        processing_count = int(processing_count or 0)
+        estimated_time = int(estimated_time or 0)
+
+        logging.info(f"📊 Redis Stats → Pending: {pending_count}, Processing: {processing_count}, Estimate: {estimated_time}s")
 
         message = (
-            f"📊 **Queue Status:**\n"
-            f"🔄 Pending: {pending_count}\n"
-            f"⚙️ Processing: {processing_count}\n"
-            f"⏳ Estimated Completion Time: {estimated_time} seconds"
+            f"📊 *Queue Status:*\n"
+            f"🔄 *Pending:* {pending_count}\n"
+            f"⚙️ *Processing:* {processing_count}\n"
+            # f"⏳ *Estimated Completion Time:* {estimated_time} seconds"
         )
 
-        await update.message.reply_text(message)
+        await update.message.reply_text(message, parse_mode="Markdown")
 
     except Exception as e:
-        # Log and send an error message if any issue occurs
-        logging.error(f"Error fetching queue status: {str(e)}")
+        logging.exception("❌ Error while checking queue status")
         await update.message.reply_text(f"❌ Error fetching queue status: {str(e)}")
+
 
 
 async def show_latest_processed_resources_list(update: Update, context: CallbackContext):
