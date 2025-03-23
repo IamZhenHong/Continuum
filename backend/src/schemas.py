@@ -79,3 +79,8 @@ class EnrichWithPrimaryLinksRequest(BaseModel):
     resource_id: int
     message: str
     enrichment_content: str
+
+class EnrichWithPerplexityRequest(BaseModel):
+    # resource_id: int
+    message: str
+    enrichment_content: str

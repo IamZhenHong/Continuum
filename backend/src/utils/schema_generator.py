@@ -115,25 +115,41 @@ def parse_enrichment_response(raw_json: Union[str, dict]) -> BaseModel:
 def generate_dynamic_schema(resource_type: str, user_instruction: str, content: str) -> dict:
     """
     Generate enrichment schema based on resource type and user instruction.
-    
+
     Args:
         resource_type (str): Type of resource (e.g. "insight", "opinion", "knowledge").
         user_instruction (str): Custom user instruction (e.g. "Focus on applicable strategies").
         content (str): Raw content of the resource.
-        
+
     Returns:
         dict: Enriched structured response.
     """
     logger.info("💡 Generating dynamic enrichment based on context...")
 
     prompt = f"""
-You are an intelligent enrichment engine that dynamically creates a tailored schema
+You are an intelligent enrichment engine that dynamically creates a tailored JSON schema
 based on the *type* of resource and the *user's instruction*.
 
-Your job is to:
-1. Understand the nature of the content (e.g. insight vs opinion vs knowledge).
-2. Understand what the user wants (from the instruction).
-3. Adapt the **fields** and **focus** of the enrichment accordingly.
+Your responsibilities:
+1. Analyze the resource type to guide what fields should be included (e.g., insight, opinion, or knowledge).
+2. Adapt your enrichment to follow the user's instruction (e.g., emphasize strategies, applications, context, etc.).
+3. Dynamically select relevant fields such as:
+   - summary
+   - actionable_insights
+   - applications
+   - supporting_evidence
+   - risks or warnings
+   - contrarian_view
+   - additional_reading
+   - context
+   - etc.
+
+🚨 Required:
+- You **must always** include a field called `"sources"` that lists relevant URLs or source links used or referenced (even if only from the input content).
+- The `sources` key should be at the **bottom** of the object and contain a list of strings (URLs).
+- If there are no actual URLs in the content, include `"sources": ["No specific source provided"]`.
+
+---
 
 ## Resource Type:
 {resource_type}
@@ -144,16 +160,15 @@ Your job is to:
 ## Content:
 {content}
 
-📌 Return a **JSON** object with customized fields. Use clear keys.
-You may introduce new keys that are relevant to the type or instruction (e.g. "contrarian view", "supporting evidence", "applications", "warnings", etc.).
-
-ONLY return valid JSON. DO NOT include explanation or Markdown.
-    """
+Return:
+- A **valid JSON object only**.
+- No markdown, no explanation, no code blocks.
+"""
 
     response = openai_client.chat.completions.create(
         model="gpt-4o",
         messages=[
-            {"role": "system", "content": "You are a helpful assistant that adapts enrichment schemas dynamically."},
+            {"role": "system", "content": "You are a helpful assistant that adapts enrichment schemas dynamically and always includes source links."},
             {"role": "user", "content": prompt}
         ]
     )
@@ -166,7 +181,6 @@ ONLY return valid JSON. DO NOT include explanation or Markdown.
     except Exception as e:
         logger.error(f"❌ Error parsing OpenAI response: {e}")
         return {}
-
 
 # # ✅ Example run
 # if __name__ == "__main__":
