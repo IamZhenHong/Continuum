@@ -32,7 +32,7 @@ import re
 
 
 
-def ai_enrichment_to_html(enriched_data: dict) -> str:
+def ai_enrichment_to_html(enriched_data: str) -> str:
     """
     Uses GPT to generate full HTML from enrichment data directly.
     Returns a complete HTML string with styling and structure.
@@ -50,7 +50,7 @@ The HTML must include:
 - Do not explain anything, just return raw HTML
 
 Enrichment data (JSON):
-{json.dumps(enriched_data)}
+{enriched_data}
     """
 
     response = openai_client.chat.completions.create(
@@ -75,7 +75,7 @@ def generate_pdf(user_id: int, resource_id: int, enriched_data: dict) -> BytesIO
     Converts GPT-generated HTML into a PDF and returns it in memory.
     """
     # Step 1: Generate styled HTML from enriched data
-    html_content = ai_enrichment_to_html(enriched_data)
+    html_content = ai_enrichment_to_html(json.dumps(enriched_data))
 
     # Step 2: Convert to PDF
     pdf_io = BytesIO()
@@ -131,6 +131,56 @@ def upload_pdf_to_supabase(user_id: int, resource_id: int, pdf_buffer: io.BytesI
         logging.error(f"❌ Error uploading PDF to Supabase: {e}")
         return None
 
+
+import io
+import logging
+from datetime import datetime
+from src.config.settings import supabase_client
+
+def upload_pdf_to_supabase_weekly_recap(user_id: int, pdf_buffer: io.BytesIO) -> str:
+    """
+    Uploads a weekly recap PDF to Supabase storage and stores the link in the `weekly_recaps` table.
+
+    Args:
+        user_id (int): The user's ID.
+        pdf_buffer (BytesIO): The generated PDF in memory.
+
+    Returns:
+        str: The public URL of the uploaded PDF.
+    """
+    try:
+        # ✅ Prepare PDF file
+        pdf_buffer.seek(0)
+        pdf_bytes = pdf_buffer.getvalue()
+        timestamp = datetime.utcnow().strftime('%Y%m%d%H%M%S')
+        pdf_filename = f"{user_id}/weekly_recap_{timestamp}.pdf"
+        storage_path = f"pdfs/{pdf_filename}"
+
+        logging.info(f"📤 Uploading weekly recap PDF to Supabase Storage: {storage_path}")
+
+        # ✅ Upload to Supabase Storage
+        supabase_client.storage.from_("reports").upload(
+            path=storage_path,
+            file=pdf_bytes,
+            file_options={"content-type": "application/pdf"}
+        )
+
+        # ✅ Get public URL
+        pdf_url = supabase_client.storage.from_("reports").get_public_url(storage_path)
+
+        # ✅ Store metadata in `weekly_recaps` table
+        recap_insert = supabase_client.table("weekly_recap").insert({
+            "user_id": user_id,
+            "pdf_url": pdf_url,
+            "created_at": datetime.utcnow().isoformat()
+        }).execute()
+
+        logging.info(f"✅ Weekly recap metadata stored in DB. PDF URL: {pdf_url}")
+        return pdf_url
+
+    except Exception as e:
+        logging.error(f"❌ Error uploading/storing weekly recap: {e}")
+        return None
 
 import os
 import io

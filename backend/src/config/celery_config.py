@@ -1,7 +1,10 @@
 from celery import Celery
 from src.config.settings import settings
 import src.services.processing_tasks
-import src.services.notifications
+import src.services.notifications.daily_digest
+import src.services.notifications.weekly_recap
+
+
 
 celery_app = Celery(
     "worker",
@@ -37,8 +40,8 @@ celery_app.conf.beat_schedule = {
     #     "schedule": 5.0,  # Every 5 seconds
     # },
     "send-weekly-summary": {
-        "task": "notifications.send_weekly_summary",
-        "schedule": crontab(hour=9, minute=0, day_of_week="monday"),
+        "task": "weekly_recap.send_weekly_recap",
+        "schedule": 50
     },
 }
 

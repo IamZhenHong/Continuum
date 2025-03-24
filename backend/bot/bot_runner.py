@@ -9,14 +9,20 @@ from bot.handlers.commands import start, queue_status, show_latest_processed_res
 from bot.handlers.callbacks import (
     handle_resource_selection, handle_tldr_request, handle_pdf_request, handle_explore_topics
 )
-from bot.handlers.messages import handle_message
+from bot.handlers.messages import handle_message, handle_setup_response
 from src.config.settings import settings
 from telegram import BotCommand
-
+from telegram.ext import CallbackContext
 
 # ✅ Init Telegram Bot
 TELEGRAM_BOT_TOKEN = settings.TELEGRAM.TELEGRAM_BOT_TOKEN.get_secret_value()
 telegram_app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+
+async def dispatch_message(update: Update, context: CallbackContext):
+    if context.user_data.get("awaiting_setup"):
+        await handle_setup_response(update, context)
+    else:
+        await handle_message(update, context)
 
 
 def register_handlers():
@@ -24,6 +30,7 @@ def register_handlers():
     telegram_app.add_handler(CommandHandler("start", start))
     telegram_app.add_handler(CommandHandler("queue_status", queue_status))
     telegram_app.add_handler(CommandHandler("latest_resources", show_latest_processed_resources_list))
+    telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, dispatch_message))
     telegram_app.add_handler(CallbackQueryHandler(handle_resource_selection, pattern="view_resource_"))
     telegram_app.add_handler(CallbackQueryHandler(handle_tldr_request, pattern="get_tldr_"))
     telegram_app.add_handler(CallbackQueryHandler(handle_pdf_request, pattern="view_pdf_"))

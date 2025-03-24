@@ -81,7 +81,7 @@ async def handle_tldr_request(update: Update, context: CallbackContext):
 
     # ✅ Fetch TL;DR from Supabase
     resource = supabase_client.table("resources") \
-        .select("summary") \
+        .select("tldr") \
         .eq("id", resource_id) \
         .single() \
         .execute()
@@ -90,7 +90,7 @@ async def handle_tldr_request(update: Update, context: CallbackContext):
         await query.answer("❌ TL;DR not available.")
         return
 
-    message = f"📜 **TL;DR:**\n{resource.data['summary']}"
+    message = f"📜 **TL;DR:**\n{resource.data['tldr']}"
     await query.message.reply_text(message, parse_mode="Markdown")
     await query.answer()
 

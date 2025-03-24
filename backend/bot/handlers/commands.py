@@ -10,9 +10,13 @@ from src.config import settings
 
 # ✅ /start Command
 async def start(update: Update, context: CallbackContext):
-    """Handles the /start command."""
-    await update.message.reply_text("Hello! Send me a message or link, and I'll process it.")
-
+    """Handles the /start command and prompts for setup."""
+    await update.message.reply_text(
+        "👋 Welcome to Hyperflow!\n\nBefore we begin, just one quick question:\n"
+        "➡️ Tell me your role, what you're interested in learning, and how often you'd like updates.\n\n"
+        "_Example: 'I'm a data analyst, I want to learn more about AI and strategy, send me updates weekly.'_"
+    )
+    context.user_data["awaiting_setup"] = True
 
 # ✅ Check Processing Queue Status
 async def queue_status(update: Update, context: CallbackContext):

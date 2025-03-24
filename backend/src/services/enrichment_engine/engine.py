@@ -1,7 +1,7 @@
 import logging
 import traceback
 import json
-import pydantic
+from openai import OpenAI
 
 from src import schemas
 from src.config.settings import openai_client, supabase_client
@@ -9,72 +9,50 @@ from src.services.resource_summarizer import extract_and_summarise_link
 from src.utils.resource_type_classifier import classify_resource_type
 from src.utils.schema_generator import generate_dynamic_schema
 from src.utils.text_processing import extract_urls, extract_diffbot_text
-from openai import OpenAI
+
 
 def enrich(data: schemas.EnrichResourceRequest):
-    """
-    Enriches a resource with additional data.
-
-    - Calls the enrichment engine to process the resource.
-    - Updates the resource with enriched data in Supabase.
-
-    Args:
-        data (EnrichResourceRequest): The request containing the resource ID.
-
-    Returns:
-        dict: Enrichment status and enriched data.
-    """
     try:
-        logging.info(f"🔄 Starting enrichment for Resource ID: {data.resource_id}")
-        logging.info(f"📥 Enrichment Input Data: user_id={data.user_id}, message={data.message}")
+        logging.info(f"\n\n🔄 Starting enrichment for Resource ID: {data.resource_id}")
+        logging.info(f"📅 Input: user_id={data.user_id}, message={data.message}")
 
-        # ✅ Extract and summarise resource
+        # Step 1: Extract and summarize resource
         logging.info("🧑‍💻 Extracting and summarizing resource...")
-        processed_resource = extract_and_summarise_link(schemas.ExtractAndSummariseLinkRequest(
-            user_id=data.user_id,
-            message=data.message,
-            resource_id=data.resource_id
-        ))
-        logging.debug(f"📦 Extracted Resource: {processed_resource}")
-
-        # ✅ Classify resource type
-        logging.info("🔍 Classifying resource type...")
-        resource_type = classify_resource_type(processed_resource.get("url_content"))
-        logging.info(f"🔍 Resource Type: {resource_type}")
-
-        # Update resource type in Supabase
-        logging.info("🔄 Updating resource type in Supabase...")
-        supabase_client.table("resources").update({"type": resource_type}).eq("id", data.resource_id).execute()
-
-        # ✅ Generate dynamic enrichment schema
-        logging.info("🔄 Generating dynamic enrichment schema...")
-        enrichment_schema = generate_dynamic_schema(
-            resource_type,
-            data.message,
-            processed_resource.get("url_content")
+        processed_resource = extract_and_summarise_link(
+            schemas.ExtractAndSummariseLinkRequest(
+                user_id=data.user_id,
+                message=data.message,
+                resource_id=data.resource_id
+            )
         )
 
-        if not processed_resource.get("url_content"):
+        url_content = processed_resource.get("url_content")
+        logging.debug(f"Extracted Resource: {processed_resource}")
+
+        if not url_content:
             logging.warning(f"⚠️ No 'url_content' found for resource {data.resource_id}. Skipping enrichment.")
             return {"status": "error", "message": "No URL content to enrich."}
 
-        # ✅ Prepare prompt
-        user_prompt = f"Enrich resource with content: {processed_resource.get('url_content', 'No content available')}"
-        logging.info("🧠 Sending prompt to OpenAI...")
+        # Step 2: Classify resource type
+        logging.info("🔍 Classifying resource type...")
+        resource_type = classify_resource_type(url_content)
+        logging.info(f"🔍 Resource Type: {resource_type}")
 
-        # ✅ Call OpenAI
-        logging.info("🔄 Calling OpenAI for enrichment...")
+        supabase_client.table("resources").update({"type": resource_type}).eq("id", data.resource_id).execute()
+
+        # Step 3: Generate dynamic enrichment schema
+        logging.info("🔄 Generating dynamic enrichment schema...")
+        enrichment_schema = generate_dynamic_schema(resource_type, data.message, url_content)
+
+        # Step 4: Call OpenAI for primary enrichment
+        user_prompt = f"Enrich resource with content: {url_content}"
+        logging.info("🧠 Calling OpenAI for primary enrichment...")
         response = openai_client.chat.completions.create(
             model="gpt-4o",
             messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "You are an **AI Enrichment Engine**. Your job is to extract **key learning elements** from a given resource. "
-                        "Based on the content of the resource, dynamically generate and output the corresponding enrichment schema in JSON format. "
-                        "The schema should contain the appropriate fields based on the resource, and for each field, provide meaningful content extracted from the resource.\n\n"
-                        f"{enrichment_schema}"
-                    )
+                {"role": "system", "content": (
+                    "You are an AI Enrichment Engine. Extract key learning elements from the resource and "
+                    "generate a JSON object based on this schema:\n\n" + enrichment_schema)
                 },
                 {"role": "user", "content": user_prompt}
             ],
@@ -82,99 +60,95 @@ def enrich(data: schemas.EnrichResourceRequest):
         )
 
         if not response or not response.choices:
-            logging.error(f"❌ OpenAI API returned an unexpected response: {response}")
-            return {"status": "error", "message": "OpenAI API failed to return choices."}
+            raise ValueError("OpenAI API failed to return choices.")
 
-        content = response.choices[0].message.content
+        primary_enrichment = response.choices[0].message.content
+        logging.info(f"✅ Primary Enrichment Result: {primary_enrichment}")
 
-        logging.info(f"✅ Primary Enrichment Result: {content}")
-
-
-        # ✅ Enrich with primary links
+        # Step 5: Enrich using subresources
         logging.info("🔄 Enriching with primary links...")
-        secondary_enrichment_data = enrich_with_primary_links(schemas.EnrichWithPrimaryLinksRequest(
-            resource_id = data.resource_id,
-            message = data.message,
-            enrichment_content = content
+        secondary_enrichment = enrich_with_primary_links(schemas.EnrichWithPrimaryLinksRequest(
+            resource_id=data.resource_id,
+            message=data.message,
+            enrichment_content=primary_enrichment
         ))
 
-        if not secondary_enrichment_data:
-            logging.error(f"❌ Enrichment failed — received empty response.")
-            return {"status": "error", "message": "Secondary Enrichment failed."}
-        
+        if not secondary_enrichment:
+            raise ValueError("Secondary enrichment failed.")
 
-        logging.info(f"✅ Secondary Enrichment Result: {secondary_enrichment_data}")
+        logging.info(f"✅ Secondary Enrichment Result: {secondary_enrichment}")
 
-        # ✅ Enrich with perplexity
-        logging.info("🔄 Enriching with perplexity...")
-        tertiary_enriched_data = enrich_with_perplexity(schemas.EnrichWithPerplexityRequest(
-            message = data.message,
-            enrichment_content = secondary_enrichment_data
+        # Step 6: Enrich using Perplexity
+        logging.info("🔄 Enriching with Perplexity...")
+        tertiary_enrichment = enrich_with_perplexity(schemas.EnrichWithPerplexityRequest(
+            message=data.message,
+            enrichment_content=secondary_enrichment
         ))
 
-        # ✅ Insert enriched data into Supabase
+        # Generate a personalized TL;DR
+        user_profile = supabase_client.table("users").select("setup_info").eq("id", data.user_id).execute().data[0]
+        tldr = generate_personalized_tldr(user_profile, tertiary_enrichment, processed_resource.get("diffbot_summary"))
+        logging.info(f"✅ Personalized TL;DR: {tldr}")
+
+        # Step 7: Insert tl;dr into Supabase
+        logging.info("📤 Inserting TL;DR into Supabase...")
+        supabase_client.table("resources").update({"tldr": tldr}).eq("id", data.resource_id).execute()
+
+        # Step 7: Insert final enrichment into Supabase
         logging.info("📤 Inserting enriched data into Supabase...")
-        supabase_response = supabase_client.table("ai_enrichments").insert({
-            "dynamic_enrichment_data": tertiary_enriched_data,
+        supabase_client.table("ai_enrichments").insert({
+            "dynamic_enrichment_data": tertiary_enrichment,
             "resource_id": data.resource_id
         }).execute()
-        logging.info(f"📤 Supabase Insert Response: {supabase_response}")
-
-        if not content:
-            logging.error(f"❌ OpenAI returned empty enrichment data for Resource ID: {data.resource_id}")
-            return {"status": "error", "message": "OpenAI returned empty content."}
 
         logging.info(f"✅ Enrichment completed successfully for Resource ID: {data.resource_id}")
-
         return {"status": "success", "message": "Resource enriched and updated successfully."}
 
-    except ValueError as ve:
-        logging.error(f"❌ JSON Parsing Error: {str(ve)}")
-        return {"status": "error", "message": "Invalid response format from OpenAI API."}
-
     except Exception as e:
-        logging.error(f"❌ Unexpected Error in enrichment: {str(e)}")
+        logging.error(f"❌ Enrichment failed: {e}")
         logging.error(traceback.format_exc())
-        return {"status": "error", "message": "An unexpected error occurred during enrichment."}
+        return {"status": "error", "message": str(e)}
+
 
 def enrich_with_primary_links(data: schemas.EnrichWithPrimaryLinksRequest):
-
     subresources = supabase_client.table("subresources").select("*").eq("resource_id", data.resource_id).execute()
-
     if not subresources.data:
-        logging.warning(f"⚠️ No subresources found for resource {data.resource_id}. Skipping primary link enrichment.")
-        return {"status": "error", "message": "No subresources found."}
-    
-    subresource_summaries = [subresource["summary"] for subresource in subresources.data]
+        logging.warning(f"⚠️ No subresources found for resource {data.resource_id}.")
+        return data.enrichment_content
 
-    # ✅ Prepare prompt
-    # ✅ Prepare system & user messages
+    subresource_summaries = [s["summary"] for s in subresources.data]
+
     system_prompt = """
-    You are an AI Enrichment Engine.
+You are an AI Enrichment Engine.
 
-    Your task is to refine and enhance a resource's enrichment by incorporating relevant insights from supplementary materials (subresources) and aligning with the user's stated intent or focus.
+Your task is to **refine and enhance** an existing enrichment by:
+1. Incorporating relevant insights from provided subresources.
+2. Respecting the user's original focus or intent.
+3. Maintaining the overall JSON schema (add new fields only if they add value).
 
-    Instructions:
-    - Review the original enrichment content.
-    - Analyze the subresource summaries to identify anything that helps clarify, contextualize, or deepen understanding.
-    - Consider the user's message and focus areas. Add content that supports these themes.
-    - Maintain the **original schema structure**. You may add new fields if they logically enhance understanding, but **do not remove or rename** existing ones.
-    - Ensure the response remains **brief, meaningful, and informational** — these are secondary enrichments meant to supplement the original.
-    - Output should be valid **JSON only**. No markdown, no explanation, no code blocks.
-    """
+Guidelines:
+- Be **short**, **contextual**, and **insightful**.
+- Remove any fluff or repetition.
+- Highlight only meaningful additions or improvements.
+- Keep the output in **valid JSON** format only (no markdown or extra commentary).
+"""
 
     user_prompt = f"""
-    Original Enrichment Data:
-    {data.enrichment_content}
+🔹 Original Enrichment:
+{data.enrichment_content}
 
-    Subresource Summaries:
-    {subresource_summaries}
+🔹 Subresource Summaries:
+{subresource_summaries}
 
-    User Message:
-    {data.message}
-    """
+🔹 User Message (Focus):
+{data.message}
 
-    logging.info("ENRICH WITH PRIMARY LINKS user_prompt: ", user_prompt)
+Instructions:
+- Use the subresource summaries to improve or expand the original enrichment only where useful.
+- Pay special attention to what the user message is emphasizing — tailor the content accordingly.
+- The final output should be a refined JSON object that better serves the user's intent.
+"""
+
 
     response = openai_client.chat.completions.create(
         model="gpt-4o",
@@ -185,93 +159,140 @@ def enrich_with_primary_links(data: schemas.EnrichWithPrimaryLinksRequest):
         response_format={"type": "json_object"}
     )
 
-    if not response or not response.choices:
-        logging.error(f"❌ OpenAI API returned an unexpected response: {response}")
-        return {"status": "error", "message": "OpenAI API failed to return choices."}
-    
-    content = response.choices[0].message.content
+    return response.choices[0].message.content if response and response.choices else data.enrichment_content
 
-    return content
 
 def enrich_with_perplexity(data: schemas.EnrichWithPerplexityRequest):
-    """
-    Uses Perplexity to research and OpenAI to generate structured enrichment.
-    """
     try:
-        # 🔐 Perplexity API
-        PERPLEXITY_API_KEY = "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"
-        perplexity_client = OpenAI(api_key=PERPLEXITY_API_KEY, base_url="https://api.perplexity.ai")
+        perplexity_client = OpenAI(
+            api_key="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",
+            base_url="https://api.perplexity.ai"
+        )
+        
 
-        # 🧠 Step 1: Get research answer from Perplexity
-        logging.info("🔍 Querying Perplexity for context...")
+
         perplexity_response = perplexity_client.chat.completions.create(
             model="sonar-pro",
             messages=[
-                {"role": "system", "content": "You are a research assistant. Provide a concise, factual answer with useful structure."},
-                {"role": "user", "content": data.message}
+                {"role": "system", "content": f"""
+                        You are an AI assistant that performs research and supplements key insights.
+
+                        Given a piece of enriched content and a user's learning intent, your job is to:
+
+                        - Extract the **main concept** they want to understand
+                        - Identify **5 relevant, recent, and credible** links that help **explain, extend, or apply** that concept
+                        - Focus on materials that support **practical understanding** — such as articles, docs, guides, or explainers
+                        """},
+                {"role": "user", "content": f"""
+                        ## USER GOAL
+                        {data.message}
+
+                        ## ENRICHED CONTENT
+                        {data.enrichment_content}
+
+                        🔍 Based on what the user wants to understand, extract the **main concept**, 
+                        then provide 5 helpful and relevant links that offer more depth, examples, or explanation for that topic.
+                        """
+                }
             ]
         )
 
         if not perplexity_response or not perplexity_response.choices:
-            logging.error("❌ Perplexity API returned no results.")
-            return {"status": "error", "message": "Perplexity response was empty."}
+            raise ValueError("Perplexity returned no content.")
 
         research_content = perplexity_response.choices[0].message.content.strip()
-        logging.info("📚 Perplexity research content received.")
-        logging.debug(f"📚 Research Content: {research_content}")
 
-        # 🧠 Step 2: Use OpenAI to enrich using Perplexity result + message
-        logging.info("🧠 Generating enriched structured content with OpenAI...")
+        # Use OpenAI to integrate research into enrichment
+        openai_prompt = f"""
+        You are an AI Enrichment Engine.
 
-        enrichment_prompt = f"""
-            You are an AI Enrichment Engine.
+        1. Existing Enrichment:
+        {data.enrichment_content}
 
-            You are given:
-            1. ✅ An existing enrichment (already structured, may be partial).
-            2. 📄 Fresh research content generated by an AI (Perplexity).
-            3. 💬 A user message expressing their interests or focus areas.
+        2. Research (from Perplexity):
+        {research_content}
 
-            Your job:
-            - Improve or expand the **existing enrichment content** using the research and message.
-            - Respect the existing schema structure, but you may add new fields if appropriate.
-            - Keep all content concise, relevant, and aligned with the user’s interest.
-            - Return the result as **pure JSON only**, no markdown, no explanation.
+        3. User Message:
+        {data.message}
 
-            ---
+        Enhance the enrichment with any useful additions. Return valid JSON only.
+        """
 
-            📦 Existing Enrichment:
-            {data.enrichment_content}
-
-            🔎 Research from Perplexity:
-            {research_content}
-
-            🗣️ User's Message:
-            {data.message}
-            """
-        
         openai_response = openai_client.chat.completions.create(
             model="gpt-4o",
             messages=[
                 {"role": "system", "content": "You are an AI Enrichment Engine."},
-                {"role": "user", "content": enrichment_prompt}
+                {"role": "user", "content": openai_prompt}
             ],
             response_format={"type": "json_object"}
         )
 
-        if not openai_response or not openai_response.choices:
-            logging.error("❌ OpenAI API failed to generate enrichment.")
-            return {"status": "error", "message": "OpenAI enrichment failed."}
-
-        enriched_data = openai_response.choices[0].message.content
-        logging.info("✅ Enrichment complete.")
-
-        return enriched_data
+        return openai_response.choices[0].message.content if openai_response and openai_response.choices else data.enrichment_content
 
     except Exception as e:
-        logging.exception(f"❌ Unexpected error during enrichment: {e}")
-        return {"status": "error", "message": "Unexpected error during enrichment."}
+        logging.exception(f"❌ Perplexity enrichment failed: {e}")
+        return data.enrichment_content
 
 
+from openai import OpenAI
+from src.config.settings import openai_client
+import logging
 
-   
 
+def generate_personalized_tldr(user_profile: dict, enriched_content: str, original_content_summary: str) -> str:
+    """
+    Generates a personalized, byte-sized TL;DR using GPT.
+
+    Args:
+        user_profile (dict): Dictionary containing 'role' and 'interests'.
+        enriched_content (str): AI-enriched structured content.
+        original_content (str): Raw extracted content from the resource.
+
+    Returns:
+        str: A TL;DR summary.
+    """
+    try:
+        system_prompt = """
+You are an AI assistant that generates crisp, insightful, personalized learning takeaways.
+
+You’re given:
+- A user’s role and interests
+- A resource’s enriched content
+- The original content
+
+Your output should:
+- Use **bullet points** or line breaks for clarity
+- Include 1–2 lines that explain the **core concept** simply
+- Follow with 1 line on **why it matters** to the user
+- Keep it minimal — no more than 3 bullet points or 4 lines total
+- Avoid hype, emojis, filler, or generic phrasing
+
+Be sharp and thoughtful. The tone should be helpful and informed — like a mentor giving a distilled takeaway.
+Do not include markdown formatting, intros, or explanations.
+"""
+
+
+        user_prompt = f"""
+## USER PROFILE
+{user_profile}
+
+## ENRICHED CONTENT
+{enriched_content}
+
+## ORIGINAL CONTENT SUMMARY
+{original_content_summary}
+"""
+
+        response = openai_client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ]
+        )
+
+        return response.choices[0].message.content.strip()
+
+    except Exception as e:
+        logging.error(f"❌ Error generating TL;DR: {str(e)}")
+        return "⚠️ Sorry, we couldn't generate a TL;DR at this time."

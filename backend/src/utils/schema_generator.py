@@ -127,27 +127,37 @@ def generate_dynamic_schema(resource_type: str, user_instruction: str, content: 
     logger.info("💡 Generating dynamic enrichment based on context...")
 
     prompt = f"""
-You are an intelligent enrichment engine that dynamically creates a tailored JSON schema
-based on the *type* of resource and the *user's instruction*.
+You are an intelligent enrichment engine designed to produce a **minimal, highly useful** structured summary of a resource.
 
-Your responsibilities:
-1. Analyze the resource type to guide what fields should be included (e.g., insight, opinion, or knowledge).
-2. Adapt your enrichment to follow the user's instruction (e.g., emphasize strategies, applications, context, etc.).
-3. Dynamically select relevant fields such as:
-   - summary
-   - actionable_insights
-   - applications
-   - supporting_evidence
-   - risks or warnings
-   - contrarian_view
-   - additional_reading
-   - context
-   - etc.
+Your goal is to generate a **JSON object** that:
+- Is adapted to the *type of resource* (e.g., insight, opinion, knowledge)
+- Follows the *user’s instruction* to tailor the depth and focus
+- Contains **only the most valuable and insightful information**
+- Avoids fluff, repetition, or obvious filler content
 
-🚨 Required:
-- You **must always** include a field called `"sources"` that lists relevant URLs or source links used or referenced (even if only from the input content).
-- The `sources` key should be at the **bottom** of the object and contain a list of strings (URLs).
-- If there are no actual URLs in the content, include `"sources": ["No specific source provided"]`.
+🧠 **How to Think:**
+- Prioritize **clarity and impact** over length.
+- Extract **what matters most** — what a smart, busy person would want to take away.
+- Focus on **insight**, **strategic value**, and **actionable understanding**, not summarizing everything.
+- If something isn’t useful, **leave it out**.
+
+🔧 You may dynamically include relevant fields such as:
+- summary
+- actionable_insights
+- applications
+- key_arguments
+- supporting_evidence
+- risks_or_warnings
+- contrarian_view
+- additional_reading
+- context
+- counterpoints
+- etc.
+
+🚨 **Required Field:**
+You **must always include** a final field called `"sources"` — a list of URLs or references extracted or inferred from the content.
+- If no URLs are present, use: `"sources": ["No specific source provided"]`
+- This key should appear **at the bottom** of the object.
 
 ---
 
@@ -161,9 +171,12 @@ Your responsibilities:
 {content}
 
 Return:
-- A **valid JSON object only**.
-- No markdown, no explanation, no code blocks.
+- A **valid JSON object only**
+- ❌ No markdown
+- ❌ No explanations
+- ❌ No code blocks
 """
+
 
     response = openai_client.chat.completions.create(
         model="gpt-4o",
@@ -203,3 +216,4 @@ Return:
 
 #     print("🎯 Main Concept:", parsed_schema.main_concept)
 #     print("🧩 Dynamic Fields:", parsed_schema.additional_fields)
+
