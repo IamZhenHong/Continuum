@@ -70,10 +70,13 @@ class ProcessSubresourceResponse(BaseModel):
     summary: str
     title: str
 
-class ProcessResourceResponse(BaseModel):
+class PreprocessResourceResponse(BaseModel):
     summary: str
     title: str
-
+    resource_type: str
+    metadata: List[str]
+    tags: List[str]
+    key_concept: str
 
 class EnrichWithPrimaryLinksRequest(BaseModel):
     resource_id: int

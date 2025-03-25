@@ -225,33 +225,35 @@ async def handle_pdf_request(update: Update, context: CallbackContext):
 
 
 # ✅ Function to handle user clicking "Explore Related Topics"
+from urllib.parse import urlparse
+
 async def handle_explore_topics(update: Update, context: CallbackContext):
     """Fetches related topics based on enrichment."""
     query: CallbackQuery = update.callback_query
-    # resource_id = query.data.replace("explore_topics_", "")
+    resource_id = query.data.replace("explore_topics_", "")
 
-    # # ✅ Fetch Related Concepts from Supabase
-    # resource = supabase_client.table("resources") \
-    #     .select("enriched_data") \
-    #     .eq("id", resource_id) \
-    #     .single() \
-    #     .execute()
+    # Fetch sources (list of links) from enrichment
+    additional_topics = supabase_client.table("ai_enrichments") \
+        .select("sources") \
+        .eq("resource_id", resource_id) \
+        .single() \
+        .execute()
 
-    # if not resource.data or not resource.data["enriched_data"]:
-    #     await query.answer("❌ No related topics found.")
-    #     return
+    if not additional_topics.data:
+        await query.answer("❌ No additional topics found.")
+        return
 
-    # enriched_data = resource.data["enriched_data"]
-    # related_concepts = enriched_data.get("related_concepts", [])
+    sources = additional_topics.data.get("sources")
 
-    # if not related_concepts:
-    #     await query.answer("❌ No related topics found.")
-    #     return
+    if not sources or not isinstance(sources, list):
+        await query.answer("❌ No valid sources found.")
+        return
 
-    # message = "🔗 **Explore Related Topics:**\n"
-    # for concept in related_concepts:
-    #     message += f"• {concept}\n"
+    # Format links using domain name
+    formatted_links = "\n".join([
+        f"🔗 [{urlparse(url).netloc}]({url})" for url in sources
+    ])
 
-    # await query.message.reply_text(message, parse_mode="Markdown")
-    await query.answer("❌ No related topics found.")
-    await query.answer()
+    message = f"""🔎 **Explore Related Topics**\n\nHere are some useful links based on this topic:\n\n{formatted_links}"""
+
+    await query.edit_message_text(message, parse_mode="Markdown")

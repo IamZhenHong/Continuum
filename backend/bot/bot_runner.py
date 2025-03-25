@@ -5,7 +5,7 @@ import asyncio
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters
 from telegram import Update
 
-from bot.handlers.commands import start, queue_status, show_latest_processed_resources_list
+from bot.handlers.commands import start, queue_status, show_latest_processed_resources_list, get_weekly_recap
 from bot.handlers.callbacks import (
     handle_resource_selection, handle_tldr_request, handle_pdf_request, handle_explore_topics
 )
@@ -30,6 +30,7 @@ def register_handlers():
     telegram_app.add_handler(CommandHandler("start", start))
     telegram_app.add_handler(CommandHandler("queue_status", queue_status))
     telegram_app.add_handler(CommandHandler("latest_resources", show_latest_processed_resources_list))
+    telegram_app.add_handler(CommandHandler("weekly_recap", get_weekly_recap))
     telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, dispatch_message))
     telegram_app.add_handler(CallbackQueryHandler(handle_resource_selection, pattern="view_resource_"))
     telegram_app.add_handler(CallbackQueryHandler(handle_tldr_request, pattern="get_tldr_"))

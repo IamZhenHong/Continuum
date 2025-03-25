@@ -7,7 +7,8 @@ from src.config import settings
 import logging
 from src.utils.redis_helper import redis_client
 from src.config import settings
-
+import datetime
+from src.services.notifications.weekly_recap import generate_weekly_recap_pdf
 # ✅ /start Command
 async def start(update: Update, context: CallbackContext):
     """Handles the /start command and prompts for setup."""
@@ -17,6 +18,54 @@ async def start(update: Update, context: CallbackContext):
         "_Example: 'I'm a data analyst, I want to learn more about AI and strategy, send me updates weekly.'_"
     )
     context.user_data["awaiting_setup"] = True
+
+# ✅ Get weekly recap
+async def get_weekly_recap(update: Update, context: CallbackContext):
+    try:
+        user_telegram_id = update.message.from_user.id
+
+        # Fetch internal user_id
+        user_response = supabase_client.table("users") \
+            .select("id") \
+            .eq("telegram_id", user_telegram_id) \
+            .execute()
+
+        if not user_response.data:
+            await update.message.reply_text("⚠️ User not found in the system.")
+            return
+
+        user_id = user_response.data[0]["id"]
+
+        # Check if a recap for the current week exists
+        start_of_week = datetime.date.today() - datetime.timedelta(days=datetime.date.today().weekday())
+
+        existing_recap = supabase_client.table("weekly_recap") \
+            .select("id, pdf_url, content") \
+            .eq("user_id", user_id) \
+            .gte("created_at", start_of_week.isoformat()) \
+            .order("created_at", desc=True) \
+            .limit(1) \
+            .execute()
+
+        if existing_recap.data:
+            recap = existing_recap.data[0]
+            message = f"📅 Here's your weekly recap for this week:\n\n{recap['content']}\n\n📄 [Download PDF]({recap['pdf_url']})"
+            await update.message.reply_text(message, parse_mode="Markdown")
+            return
+
+        # No recap found — generate one
+        await update.message.reply_text("🧠 Generating your weekly recap...")
+
+        recap_message = generate_weekly_recap_pdf(user_id=user_id)
+
+        if recap_message:
+            await update.message.reply_text(recap_message)
+        else:
+            await update.message.reply_text("⚠️ Couldn't generate a recap at this time.")
+
+    except Exception as e:
+        logging.exception("❌ Error while fetching weekly recap")
+        await update.message.reply_text("❌ An unexpected error occurred while fetching your recap.")
 
 # ✅ Check Processing Queue Status
 async def queue_status(update: Update, context: CallbackContext):

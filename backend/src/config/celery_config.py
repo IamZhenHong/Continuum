@@ -1,9 +1,10 @@
+import multiprocessing
+multiprocessing.set_start_method("forkserver", force=True)
 from celery import Celery
 from src.config.settings import settings
 import src.services.processing_tasks
 import src.services.notifications.daily_digest
 import src.services.notifications.weekly_recap
-
 
 
 celery_app = Celery(
@@ -39,10 +40,10 @@ celery_app.conf.beat_schedule = {
     #     "task": "notifications.send_daily_learning_digest",
     #     "schedule": 5.0,  # Every 5 seconds
     # },
-    "send-weekly-summary": {
-        "task": "weekly_recap.send_weekly_recap",
-        "schedule": 50
-    },
+    # "send-weekly-summary": {
+    #     "task": "weekly_recap.send_weekly_recap",
+    #     "schedule": 50
+    # },
 }
 
 

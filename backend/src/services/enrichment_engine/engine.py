@@ -5,11 +5,13 @@ from openai import OpenAI
 
 from src import schemas
 from src.config.settings import openai_client, supabase_client
-from src.services.resource_summarizer import extract_and_summarise_link
+from src.services.resource_summarizer import preprocess_link
 from src.utils.resource_type_classifier import classify_resource_type
 from src.utils.schema_generator import generate_dynamic_schema
 from src.utils.text_processing import extract_urls, extract_diffbot_text
-
+from amem.memory_system import AgenticMemorySystem
+from amem.retrievers import SimpleEmbeddingRetriever
+from .amem_setup import memory_system
 
 def enrich(data: schemas.EnrichResourceRequest):
     try:
@@ -18,7 +20,7 @@ def enrich(data: schemas.EnrichResourceRequest):
 
         # Step 1: Extract and summarize resource
         logging.info("🧑‍💻 Extracting and summarizing resource...")
-        processed_resource = extract_and_summarise_link(
+        processed_resource = preprocess_link(
             schemas.ExtractAndSummariseLinkRequest(
                 user_id=data.user_id,
                 message=data.message,
@@ -29,14 +31,32 @@ def enrich(data: schemas.EnrichResourceRequest):
         url_content = processed_resource.get("url_content")
         logging.debug(f"Extracted Resource: {processed_resource}")
 
+        # Add key concept to Agentic Memory
+
+        
+        logging.info("🧠 Adding Key Concept to memory...")
+        memory_id = memory_system.create(processed_resource.get("key_concept"))
+
+        memory = memory_system.read(memory_id)
+        logging.info(f"🧠 Key Concept added to memory: {memory}")
+        logging.info(f"🧠 Key Concept added to memory: {memory.content}")
+        logging.info(f"🧠 Key Concept added to memory: {memory.tags}")
+        logging.info(f"🧠 Key Concept added to memory: {memory.context}")
+        logging.info(f"🧠 Key Concept added to memory: {memory.keywords}")
+                     
+
+
         if not url_content:
             logging.warning(f"⚠️ No 'url_content' found for resource {data.resource_id}. Skipping enrichment.")
             return {"status": "error", "message": "No URL content to enrich."}
+        
 
-        # Step 2: Classify resource type
-        logging.info("🔍 Classifying resource type...")
-        resource_type = classify_resource_type(url_content)
-        logging.info(f"🔍 Resource Type: {resource_type}")
+        # # Step 2: Classify resource type
+        # logging.info("🔍 Classifying resource type...")
+        # resource_type = classify_resource_type(url_content)
+        # logging.info(f"🔍 Resource Type: {resource_type}")
+
+        resource_type = processed_resource.get("resource_type")
 
         supabase_client.table("resources").update({"type": resource_type}).eq("id", data.resource_id).execute()
 
@@ -80,14 +100,18 @@ def enrich(data: schemas.EnrichResourceRequest):
 
         # Step 6: Enrich using Perplexity
         logging.info("🔄 Enriching with Perplexity...")
-        tertiary_enrichment = enrich_with_perplexity(schemas.EnrichWithPerplexityRequest(
+        tertiary_enrichment, sources = enrich_with_perplexity(schemas.EnrichWithPerplexityRequest(
             message=data.message,
             enrichment_content=secondary_enrichment
         ))
 
         # Generate a personalized TL;DR
         user_profile = supabase_client.table("users").select("setup_info").eq("id", data.user_id).execute().data[0]
-        tldr = generate_personalized_tldr(user_profile, tertiary_enrichment, processed_resource.get("diffbot_summary"))
+
+        if not user_profile:
+            user_profile = {"role": "User", "interests": "General"}
+
+        tldr = generate_personalized_tldr(user_profile, tertiary_enrichment, processed_resource.get("summary"), data.message)
         logging.info(f"✅ Personalized TL;DR: {tldr}")
 
         # Step 7: Insert tl;dr into Supabase
@@ -98,7 +122,8 @@ def enrich(data: schemas.EnrichResourceRequest):
         logging.info("📤 Inserting enriched data into Supabase...")
         supabase_client.table("ai_enrichments").insert({
             "dynamic_enrichment_data": tertiary_enrichment,
-            "resource_id": data.resource_id
+            "resource_id": data.resource_id,
+            "sources": sources
         }).execute()
 
         logging.info(f"✅ Enrichment completed successfully for Resource ID: {data.resource_id}")
@@ -202,6 +227,10 @@ def enrich_with_perplexity(data: schemas.EnrichWithPerplexityRequest):
 
         research_content = perplexity_response.choices[0].message.content.strip()
 
+        sources = perplexity_response.citations
+        if not sources:
+            sources = ["No specific source provided"]
+
         # Use OpenAI to integrate research into enrichment
         openai_prompt = f"""
         You are an AI Enrichment Engine.
@@ -227,11 +256,11 @@ def enrich_with_perplexity(data: schemas.EnrichWithPerplexityRequest):
             response_format={"type": "json_object"}
         )
 
-        return openai_response.choices[0].message.content if openai_response and openai_response.choices else data.enrichment_content
+        return openai_response.choices[0].message.content if openai_response and openai_response.choices else data.enrichment_content, sources
 
     except Exception as e:
         logging.exception(f"❌ Perplexity enrichment failed: {e}")
-        return data.enrichment_content
+        return data.enrichment_content, sources
 
 
 from openai import OpenAI
@@ -239,7 +268,7 @@ from src.config.settings import openai_client
 import logging
 
 
-def generate_personalized_tldr(user_profile: dict, enriched_content: str, original_content_summary: str) -> str:
+def generate_personalized_tldr(user_profile: dict, enriched_content: str, original_content_summary: str, message: str):
     """
     Generates a personalized, byte-sized TL;DR using GPT.
 
@@ -253,35 +282,43 @@ def generate_personalized_tldr(user_profile: dict, enriched_content: str, origin
     """
     try:
         system_prompt = """
-You are an AI assistant that generates crisp, insightful, personalized learning takeaways.
+You are an AI assistant that creates ultra-concise, personalized TL;DRs for busy professionals.
 
-You’re given:
-- A user’s role and interests
-- A resource’s enriched content
-- The original content
+🎯 Output format:
+- 3 lines maximum
+- Each line = one idea
+- Line breaks MUST be used. No wrapping paragraphs.
+- Last line = a short hook (<7 words) tailored to the user’s role or interest.
 
-Your output should:
-- Use **bullet points** or line breaks for clarity
-- Include 1–2 lines that explain the **core concept** simply
-- Follow with 1 line on **why it matters** to the user
-- Keep it minimal — no more than 3 bullet points or 4 lines total
-- Avoid hype, emojis, filler, or generic phrasing
+🧠 Tone:
+- Clear, sharp, intelligent
+- Like a senior operator giving you the essence fast
+- Avoid marketing fluff, emojis, filler, or intros
 
-Be sharp and thoughtful. The tone should be helpful and informed — like a mentor giving a distilled takeaway.
-Do not include markdown formatting, intros, or explanations.
+⚠️ Rules:
+- No markdown, no bullet points, no code blocks
+- Do not exceed 3 lines
+- Each line must be short, punchy, and direct
 """
+
 
 
         user_prompt = f"""
-## USER PROFILE
+USER PROFILE:
 {user_profile}
 
-## ENRICHED CONTENT
+ENRICHED CONTENT:
 {enriched_content}
 
-## ORIGINAL CONTENT SUMMARY
+ORIGINAL SUMMARY:
 {original_content_summary}
+
+USER MESSAGE (Context):
+{message}
+
+Goal: Return only a short, 2–3 sentence TL;DR as described.
 """
+
 
         response = openai_client.chat.completions.create(
             model="gpt-4o",

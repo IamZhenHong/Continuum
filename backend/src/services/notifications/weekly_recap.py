@@ -73,7 +73,7 @@ def generate_weekly_recap_pdf(user_id: str) -> bytes:
         logging.debug(f"📘 Processing resource: ({resource['id']})")
 
         enrichment_resp = supabase_client.table("ai_enrichments") \
-            .select("dynamic_enrichment_data") \
+            .select("dynamic_enrichment_data, sources") \
             .eq("resource_id", resource["id"]) \
             .limit(1) \
             .execute()
@@ -115,6 +115,14 @@ Write a short, helpful bullet-point recap for the user in plain English.
         else:
             recap_text += f"\n📄 No PDF available for this resource."
 
+
+        # Add sources if available
+        sources = enrichment_resp.data[0]["sources"] if enrichment_resp.data else None
+        if sources:
+            recap_text += f"\n🔗 Readings: {', '.join(sources)}"
+        else:
+            recap_text += "\n🔗 No readings provided."
+
         recap_sections.append(f"🧠\n{recap_text}\n")
 
     final_text = "📅 **Here's what you learned this week:**\n\n" + "\n".join(recap_sections)
@@ -125,5 +133,14 @@ Write a short, helpful bullet-point recap for the user in plain English.
     pdf_io = BytesIO()
     HTML(string=html_content).write_pdf(pdf_io)
     pdf_io.seek(0)
-    return pdf_io
+
+    logging.info(f"📥 Uploading weekly recap for user {user_id}")
+    pdf_url = upload_pdf_to_supabase_weekly_recap(user_id, pdf_io)
+
+    if not pdf_url:
+        logging.error(f"❌ Failed to upload weekly recap PDF for user {user_id}")
+        return None
+
+    return pdf_url
+
  

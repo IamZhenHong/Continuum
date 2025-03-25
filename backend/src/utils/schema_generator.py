@@ -127,61 +127,53 @@ def generate_dynamic_schema(resource_type: str, user_instruction: str, content: 
     logger.info("💡 Generating dynamic enrichment based on context...")
 
     prompt = f"""
-You are an intelligent enrichment engine designed to produce a **minimal, highly useful** structured summary of a resource.
+Generate a clean, minimal, structured enrichment of the following content.
 
-Your goal is to generate a **JSON object** that:
-- Is adapted to the *type of resource* (e.g., insight, opinion, knowledge)
-- Follows the *user’s instruction* to tailor the depth and focus
-- Contains **only the most valuable and insightful information**
-- Avoids fluff, repetition, or obvious filler content
+📌 Your output should:
+- Be adapted to the **resource type**: {resource_type}
+- Follow the **user's instruction**: {user_instruction}
+- Prioritize insight, clarity, and usefulness
+- Include only the most relevant fields (no filler)
 
-🧠 **How to Think:**
-- Prioritize **clarity and impact** over length.
-- Extract **what matters most** — what a smart, busy person would want to take away.
-- Focus on **insight**, **strategic value**, and **actionable understanding**, not summarizing everything.
-- If something isn’t useful, **leave it out**.
-
-🔧 You may dynamically include relevant fields such as:
+🔧 You may include fields like:
 - summary
 - actionable_insights
-- applications
 - key_arguments
+- applications
 - supporting_evidence
 - risks_or_warnings
 - contrarian_view
+- counterpoints
 - additional_reading
 - context
-- counterpoints
 - etc.
 
-🚨 **Required Field:**
-You **must always include** a final field called `"sources"` — a list of URLs or references extracted or inferred from the content.
-- If no URLs are present, use: `"sources": ["No specific source provided"]`
-- This key should appear **at the bottom** of the object.
+🚨 **Required**: Always include a final field `"sources"` (a list of URLs or references).
+- If none are present, use: `"sources": ["No specific source provided"]`
 
 ---
 
-## Resource Type:
-{resource_type}
-
-## User Instruction:
-{user_instruction}
-
-## Content:
+📄 **Content**:
 {content}
 
-Return:
-- A **valid JSON object only**
-- ❌ No markdown
-- ❌ No explanations
-- ❌ No code blocks
+Return only a valid JSON object — no markdown, no code blocks, no commentary.
 """
+
 
 
     response = openai_client.chat.completions.create(
         model="gpt-4o",
         messages=[
-            {"role": "system", "content": "You are a helpful assistant that adapts enrichment schemas dynamically and always includes source links."},
+            {"role": "system", "content": """
+You are Hyperflow — an elite AI learning assistant trained to think like a brilliant, time-strapped founder who needs to learn **just enough, just in time**.
+
+Your job is to **digest dense resources** and transform them into structured, minimalist learning blocks — as if you're explaining it to a sharp 12-year-old with startup founder instincts.
+
+You never waste words. You never include fluff. You always ask:  
+🧠 “What’s the one thing this person *must* understand from this?”
+
+You generate output in the form of a **JSON object**, choosing only the fields that deliver insight, clarity, and fast application. You are allergic to surface-level summaries — you dig out what matters.
+"""},
             {"role": "user", "content": prompt}
         ]
     )
