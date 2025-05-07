@@ -1,5 +1,5 @@
 import os
-from pydantic import  Field, SecretStr
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings
 from dotenv import load_dotenv
 from openai import OpenAI
@@ -43,6 +43,16 @@ class DiffbotSettings(BaseSettings):
     DIFFBOT_TOKEN: SecretStr = Field(..., env="DIFFBOT_TOKEN")
 
 
+# ✅ Add Google OAuth and JWT Settings
+class GoogleOAuthSettings(BaseSettings):
+    GOOGLE_CLIENT_ID: str = Field(..., env="GOOGLE_CLIENT_ID")
+    GOOGLE_CLIENT_SECRET: SecretStr = Field(..., env="GOOGLE_CLIENT_SECRET")
+    REDIRECT_URI: str = Field(..., env="REDIRECT_URI")  # This is the URI where users will be redirected after OAuth
+
+class JWTSettings(BaseSettings):
+    JWT_SECRET_KEY: SecretStr = Field(..., env="JWT_SECRET_KEY")
+
+
 class Settings(BaseSettings):
     # ✅ App Metadata
     APP_NAME: str = "Hyperflow AI Assistant"
@@ -50,7 +60,7 @@ class Settings(BaseSettings):
     ENV: str = Field(default="dev", env="ENV")
     APP_BASE_URL: str = Field(default="http://localhost:8000", env="APP_BASE_URL")
 
-      # ✅ CORS Settings
+    # ✅ CORS Settings
     ALLOWED_ORIGINS: list[str] = Field(default=["*"], env="ALLOWED_ORIGINS")  # Allow all by default
 
     # ✅ External Services
@@ -60,6 +70,8 @@ class Settings(BaseSettings):
     OPENAI: OpenAISettings = OpenAISettings()
     FIRECRAWL: FirecrawlSettings = FirecrawlSettings()
     DIFFBOT: DiffbotSettings = DiffbotSettings()
+    GOOGLE_OAUTH: GoogleOAuthSettings = GoogleOAuthSettings()  # Add Google OAuth settings
+    JWT: JWTSettings = JWTSettings()  # Add JWT settings
 
     # ✅ Misc Settings
     DATA_RETENTION_DAYS: int = 30
@@ -69,6 +81,7 @@ class Settings(BaseSettings):
         env_file = ".env"
         env_file_encoding = "utf-8"
         case_sensitive = True
+        extra = "allow"  # This allows extra fields (like GOOGLE_CLIENT_ID) in the environment variables
 
 
 # ✅ Initialize Settings
@@ -87,4 +100,4 @@ supabase_client: Client = create_client(
 )
 
 # ✅ Debugging: Print Loaded Settings
-print("🔹 Loaded Settings:", settings.dict(exclude={"SUPABASE.SUPABASE_KEY", "TELEGRAM.TELEGRAM_BOT_TOKEN", "OPENAI.OPENAI_API_KEY", "FIRECRAWL.FIRECRAWL_API_KEY", "DIFFBOT.DIFFBOT_TOKEN"}))  # Hide secrets
+print("🔹 Loaded Settings:", settings.dict(exclude={"SUPABASE.SUPABASE_KEY", "TELEGRAM.TELEGRAM_BOT_TOKEN", "OPENAI.OPENAI_API_KEY", "FIRECRAWL.FIRECRAWL_API_KEY", "DIFFBOT.DIFFBOT_TOKEN", "GOOGLE_OAUTH.GOOGLE_CLIENT_SECRET", "JWT.JWT_SECRET_KEY"}))  # Hide secrets

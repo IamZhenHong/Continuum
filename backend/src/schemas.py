@@ -87,3 +87,13 @@ class EnrichWithPerplexityRequest(BaseModel):
     # resource_id: int
     message: str
     enrichment_content: str
+
+
+
+class AuthRequest(BaseModel):
+    code: str  # The authorization code passed from the frontend
+
+    class Config:
+        # You can set the ORM mode to True if you expect to work with models from a database, 
+        # but here it's not necessary since we only expect a basic JSON payload.
+        orm_mode = True

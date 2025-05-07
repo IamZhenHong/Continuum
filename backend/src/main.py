@@ -4,9 +4,13 @@ import logging
 import asyncio
 from src.config.settings import settings
 from src.utils.redis_helper import redis_client
-
+from src.routers.auth import router as auth_router
 # ✅ Initialize Logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+import os
+
+# Enable insecure transport for OAuth (only for local dev)
+os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 
 # ✅ Initialize FastAPI App
 app = FastAPI(
@@ -27,6 +31,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(auth_router, prefix="/auth", tags=["Auth"])  # Include Auth Router
 
 # ✅ Root Endpoint
 @app.get("/", tags=["Root"])
