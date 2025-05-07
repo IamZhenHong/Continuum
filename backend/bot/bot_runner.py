@@ -59,7 +59,8 @@ async def set_telegram_commands():
     commands = [
         BotCommand("start", "Start the bot"),
         BotCommand("queue_status", "Show processing queue status"),
-        BotCommand("latest_resources", "Show latest processed resources")
+        BotCommand("latest_resources", "Show latest processed resources"),
+        BotCommand("weekly_recap", "Get a weekly recap of your learning journey")
     ]
     await telegram_app.bot.set_my_commands(commands)
     logging.info("✅ Telegram bot commands set successfully!")

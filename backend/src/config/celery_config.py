@@ -2,9 +2,11 @@ import multiprocessing
 multiprocessing.set_start_method("forkserver", force=True)
 from celery import Celery
 from src.config.settings import settings
-import src.services.processing_tasks
+from src.services.processing_tasks import process_resource
 import src.services.notifications.daily_digest
 import src.services.notifications.weekly_recap
+import src.services.processing_tasks
+
 
 
 celery_app = Celery(

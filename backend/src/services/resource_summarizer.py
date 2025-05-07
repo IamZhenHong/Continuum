@@ -72,8 +72,8 @@ def process_subresources(urls: list[str], parent_resource_id: str):
             "summary": summary,
             "type": resource_type,
             "title": title,
-            "metadata": metadata,
-            "tags": tags,
+            "metadata": [metadata],
+            "tags": [tags],
             "key_concept": key_concept
         }).execute()
 

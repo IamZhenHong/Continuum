@@ -112,7 +112,7 @@ def parse_enrichment_response(raw_json: Union[str, dict]) -> BaseModel:
     return StructuredModel
 
 
-def generate_dynamic_schema(resource_type: str, user_instruction: str, content: str) -> dict:
+def generate_dynamic_schema(resource_type: str, user_instruction: str, content: str, related_memory_block: str) -> str:
     """
     Generate enrichment schema based on resource type and user instruction.
 
@@ -127,36 +127,50 @@ def generate_dynamic_schema(resource_type: str, user_instruction: str, content: 
     logger.info("💡 Generating dynamic enrichment based on context...")
 
     prompt = f"""
-Generate a clean, minimal, structured enrichment of the following content.
+You are an AI enrichment engine that generates a clean, structured, and minimal enrichment of a learning resource.
 
-📌 Your output should:
-- Be adapted to the **resource type**: {resource_type}
+Your job is to:
+- Adapt the schema based on the **resource type**: {resource_type}
 - Follow the **user's instruction**: {user_instruction}
-- Prioritize insight, clarity, and usefulness
-- Include only the most relevant fields (no filler)
+- Consider the **user's existing knowledge** to avoid redundancy and surface new ideas
+- Prioritize insight, clarity, and usefulness — not length
 
-🔧 You may include fields like:
+---
+
+🧠 **What the user already knows (related memories):**
+{related_memory_block}
+
+📄 **New Resource Content**:
+{content}
+
+---
+
+🔧 You may include only the most relevant fields such as:
 - summary
 - actionable_insights
 - key_arguments
 - applications
-- supporting_evidence
-- risks_or_warnings
-- contrarian_view
-- counterpoints
 - additional_reading
 - context
-- etc.
+- questions_to_explore
+- connections_to_prior_knowledge → (📌 Short natural-language hooks like: "This ties back to what you learned about...", "This expands on your previous note about...")
 
-🚨 **Required**: Always include a final field `"sources"` (a list of URLs or references).
-- If none are present, use: `"sources": ["No specific source provided"]`
+You do **not** need to include all — only what is relevant and adds value.
+
+🚨 Required:
+Always include a final field called `"sources"` — a list of URLs or references mentioned or implied in the content.
+- If no sources are present, use: `"sources": ["No specific source provided"]`
 
 ---
 
-📄 **Content**:
-{content}
+🎯 Output:
+- A **valid JSON object only**
+- ❌ No markdown
+- ❌ No explanation or commentary
+- ❌ No code blocks
 
-Return only a valid JSON object — no markdown, no code blocks, no commentary.
+Focus on what’s new, surprising, or useful beyond what the user already knows.
+Include `connections_to_prior_knowledge` only if meaningful connections can be made.
 """
 
 

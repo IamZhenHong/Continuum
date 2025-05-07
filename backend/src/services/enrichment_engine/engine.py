@@ -9,9 +9,10 @@ from src.services.resource_summarizer import preprocess_link
 from src.utils.resource_type_classifier import classify_resource_type
 from src.utils.schema_generator import generate_dynamic_schema
 from src.utils.text_processing import extract_urls, extract_diffbot_text
-from amem.memory_system import AgenticMemorySystem
-from amem.retrievers import SimpleEmbeddingRetriever
-from .amem_setup import memory_system
+# from amem.memory_system import AgenticMemorySystem
+# from amem.retrievers import SimpleEmbeddingRetriever
+# from .amem_setup import memory_system
+from bot.telegram_interface import send_telegram_message
 
 def enrich(data: schemas.EnrichResourceRequest):
     try:
@@ -34,16 +35,23 @@ def enrich(data: schemas.EnrichResourceRequest):
         # Add key concept to Agentic Memory
 
         
-        logging.info("🧠 Adding Key Concept to memory...")
-        memory_id = memory_system.create(processed_resource.get("key_concept"))
+        # logging.info("🧠 Adding Key Concept to memory...")
+        # memory_id = memory_system.create(processed_resource.get("key_concept"))
 
-        memory = memory_system.read(memory_id)
-        logging.info(f"🧠 Key Concept added to memory: {memory}")
-        logging.info(f"🧠 Key Concept added to memory: {memory.content}")
-        logging.info(f"🧠 Key Concept added to memory: {memory.tags}")
-        logging.info(f"🧠 Key Concept added to memory: {memory.context}")
-        logging.info(f"🧠 Key Concept added to memory: {memory.keywords}")
-                     
+        # memory = memory_system.read(memory_id)
+        # logging.info(f"🧠 Key Concept added to memory: {memory}")
+        # logging.info(f"🧠 Key Concept added to memory: {memory.content}")
+        # logging.info(f"🧠 Key Concept added to memory: {memory.tags}")
+        # logging.info(f"🧠 Key Concept added to memory: {memory.context}")
+        # logging.info(f"🧠 Key Concept added to memory: {memory.keywords}")
+
+
+        # related_memories = memory_system.search("key concept", k=5)
+        
+        # for memory in related_memories:
+        #     print("Related Memory")
+        #     print(f"ID: {memory['id']}, Content: {memory['content']}, {memory['score']}")
+        #     logging.info(f"Related Memory: {memory['id']}, Content: {memory['content']}, {memory['score']}")
 
 
         if not url_content:
@@ -62,10 +70,50 @@ def enrich(data: schemas.EnrichResourceRequest):
 
         # Step 3: Generate dynamic enrichment schema
         logging.info("🔄 Generating dynamic enrichment schema...")
-        enrichment_schema = generate_dynamic_schema(resource_type, data.message, url_content)
+
+        related_memory_block = "\n".join([f"- {m['content']}" for m in related_memories])
+
+
+
+        enrichment_schema = generate_dynamic_schema(resource_type, data.message, processed_resource.get("summary"), related_memory_block)
+
 
         # Step 4: Call OpenAI for primary enrichment
-        user_prompt = f"Enrich resource with content: {url_content}"
+
+        
+
+        user_prompt = f"""
+You are enriching a learning resource by extracting its most important ideas.
+
+Your job is to:
+- Follow the user's focus or goal
+- Avoid repeating what the user already knows
+- Highlight what's new, useful, or strategically important
+
+---
+
+📌 **User Instruction:**
+"{data.message}"
+
+📘 **Resource Content:**
+{url_content}
+
+🧠 **Related Past Learnings:**
+The user has previously encountered the following:
+
+{related_memory_block}
+
+---
+
+🎯 Based on the above:
+- Build on prior learnings
+- Fill gaps
+- Emphasize what's new
+- Follow the user's focus
+
+Return a valid JSON object based on the given schema.
+"""
+        logging.info("Primary enrichemnt user prompt", user_prompt)
         logging.info("🧠 Calling OpenAI for primary enrichment...")
         response = openai_client.chat.completions.create(
             model="gpt-4o",
@@ -98,6 +146,8 @@ def enrich(data: schemas.EnrichResourceRequest):
 
         logging.info(f"✅ Secondary Enrichment Result: {secondary_enrichment}")
 
+        sources = ["No specific source provided"]
+
         # Step 6: Enrich using Perplexity
         logging.info("🔄 Enriching with Perplexity...")
         tertiary_enrichment, sources = enrich_with_perplexity(schemas.EnrichWithPerplexityRequest(
@@ -111,7 +161,7 @@ def enrich(data: schemas.EnrichResourceRequest):
         if not user_profile:
             user_profile = {"role": "User", "interests": "General"}
 
-        tldr = generate_personalized_tldr(user_profile, tertiary_enrichment, processed_resource.get("summary"), data.message)
+        tldr = generate_personalized_tldr(user_profile, tertiary_enrichment, processed_resource.get("summary"), data.message, related_memory_block)
         logging.info(f"✅ Personalized TL;DR: {tldr}")
 
         # Step 7: Insert tl;dr into Supabase
@@ -127,7 +177,12 @@ def enrich(data: schemas.EnrichResourceRequest):
         }).execute()
 
         logging.info(f"✅ Enrichment completed successfully for Resource ID: {data.resource_id}")
+
+        send_telegram_message(data.user_id, f"✅ Resource enriched and updated successfully for Resource ID: {data.resource_id}")
+
         return {"status": "success", "message": "Resource enriched and updated successfully."}
+    
+
 
     except Exception as e:
         logging.error(f"❌ Enrichment failed: {e}")
@@ -268,7 +323,7 @@ from src.config.settings import openai_client
 import logging
 
 
-def generate_personalized_tldr(user_profile: dict, enriched_content: str, original_content_summary: str, message: str):
+def generate_personalized_tldr(user_profile: dict, enriched_content: str, original_content_summary: str, message: str, related_memory_block: str): 
     """
     Generates a personalized, byte-sized TL;DR using GPT.
 
@@ -282,23 +337,25 @@ def generate_personalized_tldr(user_profile: dict, enriched_content: str, origin
     """
     try:
         system_prompt = """
-You are an AI assistant that creates ultra-concise, personalized TL;DRs for busy professionals.
+You are an AI assistant that creates ultra-concise, personalized TL;DRs for busy professionals who learn on the go.
 
-🎯 Output format:
-- 3 lines maximum
-- Each line = one idea
-- Line breaks MUST be used. No wrapping paragraphs.
-- Last line = a short hook (<7 words) tailored to the user’s role or interest.
+🎯 Output structure:
+Line 1: A distilled insight or key takeaway
+Line 2: A second supporting or clarifying point
+Line 3: A sharp hook (under 7 words) — why it matters to this user, or how it connects to what they already know
 
-🧠 Tone:
-- Clear, sharp, intelligent
-- Like a senior operator giving you the essence fast
-- Avoid marketing fluff, emojis, filler, or intros
+🧠 Context:
+You will be given the user's role, learning preferences, past knowledge, and enriched content from a resource.
 
-⚠️ Rules:
-- No markdown, no bullet points, no code blocks
-- Do not exceed 3 lines
-- Each line must be short, punchy, and direct
+💡 Tone:
+- Clear, sharp, informed — like a senior operator explaining fast
+- Prioritize clarity, novelty, and utility
+- No intros, no filler, no emojis
+
+🚫 Format rules:
+- Return exactly 3 lines
+- No markdown, no bullet points, no wrapping paragraphs
+- Each line should be standalone and impactful
 """
 
 
@@ -307,17 +364,18 @@ You are an AI assistant that creates ultra-concise, personalized TL;DRs for busy
 USER PROFILE:
 {user_profile}
 
-ENRICHED CONTENT:
-{enriched_content}
+USER MESSAGE (Instruction or Curiosity):
+{message}
 
 ORIGINAL SUMMARY:
 {original_content_summary}
 
-USER MESSAGE (Context):
-{message}
+RELATED MEMORY (What the user already knows):
+{related_memory_block}
 
-Goal: Return only a short, 2–3 sentence TL;DR as described.
+Your task: Write a 3-line TL;DR that builds on what the user knows, aligns with their interest, and captures the most essential new insight from this resource.
 """
+
 
 
         response = openai_client.chat.completions.create(

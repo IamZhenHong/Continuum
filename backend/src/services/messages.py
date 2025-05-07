@@ -64,7 +64,7 @@ async def store_message(data: schemas.MessageCreate):
 
         url = extract_url(data.message)
 
-        print("URL", url)
+        print("URLLLLLLLLLL", url)
 
         if url:
             resource_response = supabase_client.table("resources").insert({
@@ -78,7 +78,10 @@ async def store_message(data: schemas.MessageCreate):
                 resource_id = resource_response.data[0]["id"]
                 logging.info(f"🔗 Resource Inserted: {resource_id}")
 
-        router_response = await route_intent_action(schemas.IntentRouterRequest(user_id=user_id,  intent=detected_intent,message=data.message, resource_id=resource_id))
+        # router_response = await route_intent_action(schemas.IntentRouterRequest(user_id=user_id,  intent=detected_intent,message=data.message, resource_id=resource_id))
+
+        from src.services.processing_tasks import add_to_processing_queue
+        await add_to_processing_queue(schemas.IntentRouterRequest(user_id=user_id,  intent=detected_intent,message=data.message, resource_id=resource_id))
 
         return {"message": "Stored successfully!", "intent": detected_intent}
 
