@@ -12,12 +12,22 @@ from src.services.notifications.weekly_recap import generate_weekly_recap_pdf
 # ✅ /start Command
 async def start(update: Update, context: CallbackContext):
     """Handles the /start command and prompts for setup."""
+    # await update.message.reply_text(
+    #     "👋 Welcome to Hyperflow!\n\nBefore we begin, just one quick question:\n"
+    #     "➡️ Tell me your role, what you're interested in learning, and how often you'd like updates.\n\n"
+    #     "_Example: 'I'm a data analyst, I want to learn more about AI and strategy, send me updates weekly.'_"
+    # )
+    # context.user_data["awaiting_setup"] = True
+
     await update.message.reply_text(
-        "👋 Welcome to Hyperflow!\n\nBefore we begin, just one quick question:\n"
-        "➡️ Tell me your role, what you're interested in learning, and how often you'd like updates.\n\n"
-        "_Example: 'I'm a data analyst, I want to learn more about AI and strategy, send me updates weekly.'_"
+        "🔗 Click the button below to connect your account and get started!",
+        reply_markup=connect_button()
     )
-    context.user_data["awaiting_setup"] = True
+
+def connect_button():
+    button = InlineKeyboardButton(text="Connect", url="https://1194-2001-e68-5433-c7b6-5953-c072-290-e895.ngrok-free.app")
+    keyboard = [[button]]
+    return InlineKeyboardMarkup(keyboard)
 
 # ✅ Get weekly recap
 async def get_weekly_recap(update: Update, context: CallbackContext):
