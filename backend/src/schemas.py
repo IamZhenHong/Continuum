@@ -97,3 +97,9 @@ class AuthRequest(BaseModel):
         # You can set the ORM mode to True if you expect to work with models from a database, 
         # but here it's not necessary since we only expect a basic JSON payload.
         orm_mode = True
+
+class ExtractWithOCRRequest(BaseModel):
+    user_id: int
+    resource_url: str
+    message: str
+    # message_type: str

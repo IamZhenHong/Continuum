@@ -36,7 +36,10 @@ def register_handlers():
     telegram_app.add_handler(CallbackQueryHandler(handle_tldr_request, pattern="get_tldr_"))
     telegram_app.add_handler(CallbackQueryHandler(handle_pdf_request, pattern="view_pdf_"))
     telegram_app.add_handler(CallbackQueryHandler(handle_explore_topics, pattern="explore_topics_"))
-    telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    # telegram_app.add_handler(MessageHandler(filters.TEXT & filters.PHOTO & ~filters.COMMAND, handle_message))
+    # telegram_app.add_handler(MessageHandler(filters.PHOTO, handle_message))
+    # telegram_app.add_handler(MessageHandler(filters.TEXT, handle_message))
+    telegram_app.add_handler(MessageHandler(filters.ALL, handle_message))
 
 
 async def run_telegram_bot():
