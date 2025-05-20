@@ -58,48 +58,24 @@ struct ContentView: View {
     
     var body: some View {
         HStack(spacing: 0) {
-            // Main drop zone
-            ZStack {
-                // Background
-                RoundedRectangle(cornerRadius: Theme.cornerRadius)
-                    .fill(Theme.background)
-                    .frame(width: 80)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: Theme.cornerRadius)
-                            .stroke(Theme.secondary, lineWidth: 1)
+            // Expand/Collapse button
+            Button(action: { 
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                    isExpanded.toggle()
+                }
+            }) {
+                Image(systemName: isExpanded ? "chevron.left" : "chevron.right")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(Theme.secondary)
+                    .frame(width: 24, height: 24)
+                    .background(
+                        Circle()
+                            .fill(Theme.background)
+                            .shadow(color: Color.black.opacity(0.1), radius: 2, x: 0, y: 1)
                     )
-                
-                // Content
-                VStack(spacing: Theme.spacing) {
-                    Image(systemName: "arrow.down.doc")
-                        .font(.system(size: 28, weight: .medium))
-                        .foregroundColor(isTargeted ? Theme.primary : Theme.secondary)
-                        .scaleEffect(isTargeted ? 1.1 : 1.0)
-                        .animation(.spring(response: 0.3, dampingFraction: 0.6), value: isTargeted)
-                    
-                    Text("Drop Here")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(isTargeted ? Theme.primary : Theme.textSecondary)
-                        .animation(.easeInOut(duration: 0.2), value: isTargeted)
-                }
             }
-            .frame(width: 80, height: 240)
-            .background(
-                RoundedRectangle(cornerRadius: Theme.cornerRadius)
-                    .fill(isTargeted ? Theme.accent : Color.clear)
-                    .animation(.easeInOut(duration: 0.2), value: isTargeted)
-            )
-            .onDrop(of: [.fileURL, .image, .png, .jpeg, .tiff], isTargeted: $isTargeted) { providers in
-                print("Drop received with \(providers.count) providers")
-                isProcessing = true
-                handleDrop(providers: providers)
-                return true
-            }
-            .onChange(of: isTargeted) { newValue in
-                if !newValue {
-                    isProcessing = false
-                }
-            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 8)
             
             // Expanded view
             if isExpanded {
@@ -173,26 +149,59 @@ struct ContentView: View {
                 .background(Theme.background)
             }
             
-            // Expand/Collapse button
-            Button(action: { 
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                    isExpanded.toggle()
-                }
-            }) {
-                Image(systemName: isExpanded ? "chevron.right" : "chevron.left")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundColor(Theme.secondary)
-                    .frame(width: 24, height: 24)
-                    .background(
-                        Circle()
-                            .fill(Theme.background)
-                            .shadow(color: Color.black.opacity(0.1), radius: 2, x: 0, y: 1)
+            // Main drop zone
+            ZStack {
+                // Background
+                RoundedRectangle(cornerRadius: Theme.cornerRadius)
+                    .fill(Theme.background)
+                    .frame(width: 40)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Theme.cornerRadius)
+                            .stroke(Theme.secondary, lineWidth: 1)
                     )
+                
+                // Content
+                VStack(spacing: Theme.spacing) {
+                    if isTargeted {
+                        Image(systemName: "arrow.down.doc")
+                            .font(.system(size: 20, weight: .medium))
+                            .foregroundColor(Theme.primary)
+                            .scaleEffect(1.1)
+                            .animation(.spring(response: 0.3, dampingFraction: 0.6), value: isTargeted)
+                        
+                        Text("Drop Here")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundColor(Theme.primary)
+                            .animation(.easeInOut(duration: 0.2), value: isTargeted)
+                    } else {
+                        Text("Continuum")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(Theme.secondary)
+                            .rotationEffect(.degrees(-90))
+                            .animation(.easeInOut(duration: 0.2), value: isTargeted)
+                    }
+                }
             }
-            .buttonStyle(.plain)
-            .padding(.horizontal, 8)
+            .frame(width: 40, height: 240)
+            .background(
+                RoundedRectangle(cornerRadius: Theme.cornerRadius)
+                    .fill(isTargeted ? Theme.accent : Color.clear)
+                    .animation(.easeInOut(duration: 0.2), value: isTargeted)
+            )
+            .onDrop(of: [.fileURL, .image, .png, .jpeg, .tiff], isTargeted: $isTargeted) { providers in
+                print("Drop received with \(providers.count) providers")
+                isProcessing = true
+                handleDrop(providers: providers)
+                return true
+            }
+            .onChange(of: isTargeted) { newValue in
+                if !newValue {
+                    isProcessing = false
+                }
+            }
         }
         .frame(height: 240)
+        .frame(maxWidth: .infinity, alignment: .trailing)
     }
     
     private func openImagePreview(_ url: URL) {
