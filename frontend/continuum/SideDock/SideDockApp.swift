@@ -42,13 +42,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 let screenFrame = screen.visibleFrame
                 let windowFrame = window.frame
                 let newOrigin = NSPoint(
-                    x: screenFrame.maxX - windowFrame.width,
+                    x: screenFrame.maxX - windowFrame.width - 10, // Add small margin from right edge
                     y: screenFrame.midY - (windowFrame.height / 2)
                 )
                 window.setFrameOrigin(newOrigin)
             }
             
-            // Make window stay on top of other windows
+            // Make window stay on top of other windows and stick to right side
             window.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .transient, .ignoresCycle]
             
             // Enable default window dragging but constrain it
@@ -56,7 +56,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             window.delegate = self
             
             setupDragHandling(for: window)
+            
+            // Add observer for screen changes
+            NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: NSApplication.shared, queue: .main) { [weak self] _ in
+                self?.repositionWindow()
+            }
         }
+    }
+    
+    private func repositionWindow() {
+        guard let window = mainWindow, let screen = NSScreen.main else { return }
+        let screenFrame = screen.visibleFrame
+        let windowFrame = window.frame
+        let newOrigin = NSPoint(
+            x: screenFrame.maxX - windowFrame.width - 10, // Add small margin from right edge
+            y: screenFrame.midY - (windowFrame.height / 2)
+        )
+        window.setFrameOrigin(newOrigin)
     }
     
     private func setupFullscreenPanel() {
@@ -136,9 +152,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             fullscreenPanel?.orderFront(nil)
             positionFullscreenPanel()
             
-            // Force panel to front
+            // Force panel to front and ensure it stays visible
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
                 self?.fullscreenPanel?.orderFront(nil)
+                self?.fullscreenPanel?.level = .floating // Ensure it stays above fullscreen windows
             }
         } else {
             mainWindow?.orderFront(nil)
@@ -151,7 +168,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let screenFrame = screen.frame
         let panelFrame = panel.frame
         let newOrigin = NSPoint(
-            x: screenFrame.maxX - panelFrame.width,
+            x: screenFrame.maxX - panelFrame.width - 10, // Add small margin from right edge
             y: screenFrame.midY - (panelFrame.height / 2)
         )
         panel.setFrameOrigin(newOrigin)
@@ -191,10 +208,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let maxY = screen.visibleFrame.maxY - window.frame.height - margin
         let clampedY = max(minY, min(maxY, newY))
         
-        // Update window position
+        // Update window position, keeping it fixed to the right edge
         var frame = window.frame
         frame.origin = NSPoint(
-            x: screen.visibleFrame.maxX - frame.width,
+            x: screen.visibleFrame.maxX - frame.width - 10, // Add small margin from right edge
             y: clampedY
         )
         window.setFrame(frame, display: true)
