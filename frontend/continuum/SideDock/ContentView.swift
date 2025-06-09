@@ -62,6 +62,38 @@ struct ContentView: View {
             Button(action: { 
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                     isExpanded.toggle()
+                    // Update window size when expanding/collapsing
+                    if let window = NSApplication.shared.windows.first {
+                        let newWidth = isExpanded ? 340 : 40
+                        let newHeight = 600
+                        
+                        // Get screen frame
+                        if let screen = NSScreen.main {
+                            let screenFrame = screen.frame
+                            let currentFrame = window.frame
+                            
+                            // Calculate new frame
+                            let newFrame = NSRect(
+                                x: screenFrame.maxX - CGFloat(newWidth) - 10,
+                                y: currentFrame.origin.y,
+                                width: CGFloat(newWidth),
+                                height: CGFloat(newHeight)
+                            )
+                            
+                            window.setFrame(newFrame, display: true)
+                            
+                            // Ensure window stays within screen bounds
+                            if newFrame.maxX > screenFrame.maxX {
+                                let adjustedFrame = NSRect(
+                                    x: screenFrame.maxX - CGFloat(newWidth) - 10,
+                                    y: currentFrame.origin.y,
+                                    width: CGFloat(newWidth),
+                                    height: CGFloat(newHeight)
+                                )
+                                window.setFrame(adjustedFrame, display: true)
+                            }
+                        }
+                    }
                 }
             }) {
                 Image(systemName: isExpanded ? "chevron.left" : "chevron.right")
@@ -145,7 +177,7 @@ struct ContentView: View {
                         .padding(.vertical, 8)
                     }
                 }
-                .frame(width: 300)
+                .frame(width: 300, height: 400)
                 .background(Theme.background)
             }
             
@@ -182,7 +214,7 @@ struct ContentView: View {
                     }
                 }
             }
-            .frame(width: 40, height: 240)
+            .frame(width: 40, height: 400)
             .background(
                 RoundedRectangle(cornerRadius: Theme.cornerRadius)
                     .fill(isTargeted ? Theme.accent : Color.clear)
@@ -200,8 +232,24 @@ struct ContentView: View {
                 }
             }
         }
-        .frame(height: 240)
+        .frame(height: 400)
         .frame(maxWidth: .infinity, alignment: .trailing)
+        .onAppear {
+            // Set up window size observer
+            if let window = NSApplication.shared.windows.first {
+                NotificationCenter.default.addObserver(forName: NSWindow.didResizeNotification, object: window, queue: .main) { _ in
+                    if let screen = NSScreen.main {
+                        let screenFrame = screen.frame
+                        let windowFrame = window.frame
+                        let newOrigin = NSPoint(
+                            x: screenFrame.maxX - windowFrame.width - 10,
+                            y: screenFrame.midY - (windowFrame.height / 2)
+                        )
+                        window.setFrameOrigin(newOrigin)
+                    }
+                }
+            }
+        }
     }
     
     private func openImagePreview(_ url: URL) {
